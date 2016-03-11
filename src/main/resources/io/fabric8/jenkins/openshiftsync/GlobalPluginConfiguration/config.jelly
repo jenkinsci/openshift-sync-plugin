@@ -26,5 +26,9 @@
              description="The API server to sync against - leave blank if running on an OpenShift cluster">
       <f:textbox/>
     </f:entry>
+    <f:entry title="Namespace" field="namespace"
+             description="The namespace to sync BuildConfigs with - leave blank to sync with all namespaces. Environment variables in the form ${name} will be expanded.">
+      <f:textbox/>
+    </f:entry>
   </f:section>
 </j:jelly>

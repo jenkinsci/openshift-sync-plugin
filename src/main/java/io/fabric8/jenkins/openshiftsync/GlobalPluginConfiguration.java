@@ -15,12 +15,10 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import com.thoughtworks.xstream.annotations.XStreamOmitField;
 import hudson.Extension;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
-import io.fabric8.kubernetes.client.Watcher;
-import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
@@ -34,26 +32,31 @@ import java.util.logging.Logger;
 @Extension
 public class GlobalPluginConfiguration extends GlobalConfiguration {
 
+  @XStreamOmitField
   private final Logger logger = Logger.getLogger(getClass().getName());
 
   private boolean enabled = false;
 
   private String server;
 
+  private String namespace;
+
+  @XStreamOmitField
   private OpenShiftClient openShiftClient = null;
 
+  @XStreamOmitField
   private Watch watch;
 
   @DataBoundConstructor
-  public GlobalPluginConfiguration(boolean enable, String server) {
+  public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
     this.enabled = enable;
     this.server = server;
+    this.namespace = namespace;
     configChange();
   }
 
   public GlobalPluginConfiguration() {
     load();
-    openShiftClient = null;
     configChange();
   }
 
@@ -90,6 +93,14 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
     this.server = server;
   }
 
+  public String getNamespace() {
+    return namespace;
+  }
+
+  public void setNamespace(String namespace) {
+    this.namespace = namespace;
+  }
+
   private void configChange() {
     if (!enabled) {
       if (watch != null) {
@@ -108,19 +119,13 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       }
       Config config = configBuilder.build();
       openShiftClient = new DefaultOpenShiftClient(config);
-      watch = openShiftClient.buildConfigs().watch(new Watcher<BuildConfig>() {
-        @Override
-        public void eventReceived(Action action, BuildConfig buildConfig) {
-          logger.info(buildConfig.toString());
-        }
 
-        @Override
-        public void onClose(KubernetesClientException e) {
-          if (e != null) {
-            logger.warning(e.toString());
-          }
-        }
-      });
+      if (namespace != null && !namespace.isEmpty()) {
+        watch = openShiftClient.buildConfigs().inNamespace(namespace).watch(new BuildConfigWatcher());
+      } else {
+        watch = openShiftClient.buildConfigs().inAnyNamespace().watch(new BuildConfigWatcher());
+      }
+
     }
   }
 
