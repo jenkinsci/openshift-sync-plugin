@@ -8,6 +8,8 @@ import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
 import org.apache.tools.ant.filters.StringInputStream;
 
+import javax.xml.transform.Source;
+import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.util.logging.Logger;
 
@@ -55,8 +57,22 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  private void modifyJob(BuildConfig buildConfig) {
+  private void modifyJob(BuildConfig buildConfig) throws IOException, InterruptedException {
+    String jobName = jobName(buildConfig);
+    Job job = Jenkins.getInstance().getItemByFullName(jobName, Job.class);
+    if (job == null) {
+      return;
+    }
 
+    if (!buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
+      job.delete();
+      return;
+    }
+
+    Job updatedJob = mapBuildConfigToJob(buildConfig);
+    Source source = new StreamSource(new StringInputStream(new XStream2().toXML(updatedJob)));
+    job.updateByXml(source);
+    job.save();
   }
 
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
