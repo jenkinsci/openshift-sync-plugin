@@ -61,8 +61,8 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
     String jobName = jobName(buildConfig);
-    Item item = Jenkins.getInstance().getItem(jobName);
-    item.delete();
+    Job job = Jenkins.getInstance().getItemByFullName(jobName, Job.class);
+    job.delete();
   }
 
 }
