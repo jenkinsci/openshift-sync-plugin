@@ -1,6 +1,5 @@
 package io.fabric8.jenkins.openshiftsync;
 
-import hudson.model.Item;
 import hudson.model.Job;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
@@ -17,6 +16,7 @@ import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildCo
 
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
+  public static final String EXTERNAL_BUILD_STRATEGY = "External";
   private final Logger logger = Logger.getLogger(getClass().getName());
 
   @Override
@@ -46,11 +46,13 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   }
 
   private void createJob(BuildConfig buildConfig) throws IOException {
-    Job job = mapBuildConfigToJob(buildConfig);
-    Jenkins.getInstance().createProjectFromXML(
-      job.getName(),
-      new StringInputStream(new XStream2().toXML(job))
-    );
+    if (buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
+      Job job = mapBuildConfigToJob(buildConfig);
+      Jenkins.getInstance().createProjectFromXML(
+        job.getName(),
+        new StringInputStream(new XStream2().toXML(job))
+      );
+    }
   }
 
   private void modifyJob(BuildConfig buildConfig) {
