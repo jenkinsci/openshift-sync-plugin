@@ -1,5 +1,6 @@
 package io.fabric8.jenkins.openshiftsync;
 
+import hudson.model.Item;
 import hudson.model.Job;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
@@ -11,6 +12,7 @@ import org.apache.tools.ant.filters.StringInputStream;
 import java.io.IOException;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.jobName;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
 
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
@@ -38,7 +40,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           modifyJob(buildConfig);
           break;
       }
-    } catch (IOException e) {
+    } catch (IOException | InterruptedException e) {
       e.printStackTrace();
     }
   }
@@ -55,7 +57,10 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   }
 
-  private void deleteJob(BuildConfig buildConfig) {
+  private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
+    String jobName = jobName(buildConfig);
+    Item item = Jenkins.getInstance().getItem(jobName);
+    item.delete();
   }
 
 }
