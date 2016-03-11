@@ -1,0 +1,13 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+  <f:section title="OpenShift Jenkins Sync">
+    <f:entry title="Enabled" field="enabled"
+             description="Check if we should sync OpenShift builds with Jenkins jobs">
+      <f:checkbox/>
+    </f:entry>
+    <f:entry title="Server" field="server"
+             description="The API server to sync against - leave blank if running on an OpenShift cluster">
+      <f:textbox/>
+    </f:entry>
+  </f:section>
+</j:jelly>
