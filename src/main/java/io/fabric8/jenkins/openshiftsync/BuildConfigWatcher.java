@@ -15,6 +15,7 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
@@ -44,6 +45,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
+  @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
   @Override
   public void eventReceived(Watcher.Action action, BuildConfig buildConfig) {
     try {
@@ -63,8 +65,9 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
+  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void upsertJob(BuildConfig buildConfig) throws IOException {
-    if (buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
+    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(buildConfig.getSpec().getStrategy().getType())) {
       String jobName = jobName(buildConfig);
       Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig);
       InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
@@ -83,8 +86,9 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
+  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void modifyJob(BuildConfig buildConfig) throws IOException, InterruptedException {
-    if (buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
+    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(buildConfig.getSpec().getStrategy().getType())) {
       upsertJob(buildConfig);
       return;
     }
@@ -96,6 +100,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
+  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
     String jobName = jobName(buildConfig);
     Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
