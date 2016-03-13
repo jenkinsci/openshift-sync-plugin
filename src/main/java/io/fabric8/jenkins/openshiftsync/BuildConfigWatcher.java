@@ -11,6 +11,7 @@ import org.apache.tools.ant.filters.StringInputStream;
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.jobName;
@@ -33,7 +34,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     try {
       switch (action) {
         case ADDED:
-          createJob(buildConfig);
+          upsertJob(buildConfig);
           break;
         case DELETED:
           deleteJob(buildConfig);
@@ -47,38 +48,45 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  private void createJob(BuildConfig buildConfig) throws IOException {
+  private void upsertJob(BuildConfig buildConfig) throws IOException {
     if (buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
-      Job job = mapBuildConfigToJob(buildConfig);
-      Jenkins.getInstance().createProjectFromXML(
-        job.getName(),
-        new StringInputStream(new XStream2().toXML(job))
-      );
+      String jobName = jobName(buildConfig);
+      Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig);
+      InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+
+      Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
+      if (job == null) {
+        Jenkins.getInstance().createProjectFromXML(
+          jobName,
+          jobStream
+        );
+      } else {
+        Source source = new StreamSource(jobStream);
+        job.updateByXml(source);
+        job.save();
+      }
     }
   }
 
   private void modifyJob(BuildConfig buildConfig) throws IOException, InterruptedException {
+    if (buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
+      upsertJob(buildConfig);
+      return;
+    }
+
     String jobName = jobName(buildConfig);
-    Job job = Jenkins.getInstance().getItemByFullName(jobName, Job.class);
-    if (job == null) {
-      return;
-    }
-
-    if (!buildConfig.getSpec().getStrategy().getType().equalsIgnoreCase(EXTERNAL_BUILD_STRATEGY)) {
+    Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
+    if (job != null) {
       job.delete();
-      return;
     }
-
-    Job updatedJob = mapBuildConfigToJob(buildConfig);
-    Source source = new StreamSource(new StringInputStream(new XStream2().toXML(updatedJob)));
-    job.updateByXml(source);
-    job.save();
   }
 
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
     String jobName = jobName(buildConfig);
-    Job job = Jenkins.getInstance().getItemByFullName(jobName, Job.class);
-    job.delete();
+    Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
+    if (job != null) {
+      job.delete();
+    }
   }
 
 }
