@@ -26,19 +26,24 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 public class BuildConfigToJobMapper {
 
-  public static Job<WorkflowJob, WorkflowRun> mapBuildConfigToJob(BuildConfig bc) {
+  public static Job<WorkflowJob, WorkflowRun> mapBuildConfigToJob(BuildConfig bc, String defaultNamespace) {
     GitSCM scm = new GitSCM(bc.getSpec().getSource().getGit().getUri());
 
     FlowDefinition flowDefinition = new CpsScmFlowDefinition(scm, "Jenkinsfile");
 
-    WorkflowJob job = new WorkflowJob(Jenkins.getInstance(), jobName(bc));
+    WorkflowJob job = new WorkflowJob(Jenkins.getInstance(), jobName(bc, defaultNamespace));
     job.setDefinition(flowDefinition);
 
     return job;
   }
 
-  public static String jobName(BuildConfig bc) {
-    return bc.getMetadata().getNamespace() + "-" + bc.getMetadata().getName();
+  public static String jobName(BuildConfig bc, String defaultNamespace) {
+    String namespace = bc.getMetadata().getNamespace();
+    String name = bc.getMetadata().getName();
+    if (namespace == null || namespace.length() == 0 || namespace.equals(defaultNamespace)) {
+      return name;
+    }
+    return namespace + "-" + name;
   }
 
 }

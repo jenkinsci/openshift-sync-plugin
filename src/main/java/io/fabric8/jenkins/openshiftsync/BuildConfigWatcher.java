@@ -18,9 +18,11 @@ package io.fabric8.jenkins.openshiftsync;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
 import hudson.util.XStream2;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
+import io.fabric8.openshift.api.model.BuildConfigList;
 import jenkins.model.Jenkins;
 import org.apache.tools.ant.filters.StringInputStream;
 
@@ -28,6 +30,8 @@ import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.jobName;
@@ -37,11 +41,30 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   public static final String EXTERNAL_BUILD_STRATEGY = "External";
   private final Logger logger = Logger.getLogger(getClass().getName());
+  private final String defaultNamespace;
+
+  public BuildConfigWatcher(String defaultNamespace) {
+    this.defaultNamespace = defaultNamespace;
+  }
 
   @Override
   public void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
+    }
+  }
+
+  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
+  public void onInitialBuildConfigs(BuildConfigList buildConfigs) {
+    List<BuildConfig> items = buildConfigs.getItems();
+    if (items != null) {
+      for (BuildConfig buildConfig : items) {
+        try {
+          upsertJob(buildConfig);
+        } catch (IOException e) {
+          e.printStackTrace();
+        }
+      }
     }
   }
 
@@ -67,9 +90,9 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void upsertJob(BuildConfig buildConfig) throws IOException {
-    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(buildConfig.getSpec().getStrategy().getType())) {
-      String jobName = jobName(buildConfig);
-      Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig);
+    if (isJenkinsBuildConfig(buildConfig)) {
+      String jobName = jobName(buildConfig, defaultNamespace);
+      Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
       InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
 
       Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
@@ -88,12 +111,12 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void modifyJob(BuildConfig buildConfig) throws IOException, InterruptedException {
-    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(buildConfig.getSpec().getStrategy().getType())) {
+    if (isJenkinsBuildConfig(buildConfig)) {
       upsertJob(buildConfig);
       return;
     }
 
-    String jobName = jobName(buildConfig);
+    String jobName = jobName(buildConfig, defaultNamespace);
     Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
     if (job != null) {
       job.delete();
@@ -102,11 +125,27 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
-    String jobName = jobName(buildConfig);
+    String jobName = jobName(buildConfig, defaultNamespace);
     Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
     if (job != null) {
       job.delete();
     }
+  }
+
+  private boolean isJenkinsBuildConfig(BuildConfig buildConfig) {
+    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(buildConfig.getSpec().getStrategy().getType())) {
+      return true;
+    }
+    ObjectMeta metadata = buildConfig.getMetadata();
+    if (metadata != null) {
+      Map<String, String> annotations = metadata.getAnnotations();
+      if (annotations != null) {
+        if (annotations.get("fabric8.link.jenkins.job/label") != null) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
 }
