@@ -24,9 +24,12 @@ import jenkins.model.Jenkins;
  */
 public class JenkinsUtils {
   public static Job getJob(String job) {
-    TopLevelItem item = Jenkins.getInstance().getItem(job);
-    if (item instanceof Job) {
-      return (Job) item;
+    Jenkins jenkins = Jenkins.getInstance();
+    if (jenkins != null) {
+      TopLevelItem item = jenkins.getItem(job);
+      if (item instanceof Job) {
+        return (Job) item;
+      }
     }
     return null;
   }
@@ -41,5 +44,18 @@ public class JenkinsUtils {
 
   public static Run getRun(BuildName buildName) {
     return getRun(buildName.getJobName(), buildName.getBuildName());
+  }
+
+  public static String getRootUrl() {
+    // TODO is there a better place to find this?
+    String root = null;
+    Jenkins jenkins = Jenkins.getInstance();
+    if (jenkins != null) {
+      root = jenkins.getRootUrl();
+    }
+    if (root == null || root.length() == 0) {
+      root = "http://localhost:8080/jenkins/";
+    }
+    return root;
   }
 }

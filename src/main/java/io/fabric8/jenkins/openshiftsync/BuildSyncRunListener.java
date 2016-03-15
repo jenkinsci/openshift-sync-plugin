@@ -1,13 +1,12 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
+ * Copyright (C) 2016 Red Hat, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,11 +20,9 @@ import com.squareup.okhttp.Request;
 import com.squareup.okhttp.Response;
 import com.thoughtworks.xstream.annotations.XStreamOmitField;
 import hudson.Extension;
-import hudson.model.Job;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
-import hudson.model.TopLevelItem;
 import hudson.model.listeners.RunListener;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.Build;
@@ -34,9 +31,7 @@ import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.BuildSpec;
-import io.fabric8.openshift.api.model.BuildStatus;
 import io.fabric8.openshift.client.OpenShiftClient;
-import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -161,11 +156,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   protected void pollRun(String url, Run run) {
     BuildName buildName = BuildName.parseBuildUrl(url);
 
-    // TODO is there a better place to find this?
-    String root = Jenkins.getInstance().getRootUrl();
-    if (root == null || root.length() == 0) {
-      root = "http://localhost:8080/jenkins/";
-    }
+    String root = JenkinsUtils.getRootUrl();
 
     String fullUrl = joinPaths(root, url, "/wfapi/describe");
     logger.info("Polling URL: " + fullUrl + " for " + buildName);
@@ -260,18 +251,18 @@ public class BuildSyncRunListener extends RunListener<Run> {
           phase = BuildPhases.RUNNING;
         } else {
           Result result = run.getResult();
-          if (result.equals(Result.SUCCESS)) {
-            phase = BuildPhases.COMPLETE;
-          } else if (result.equals(Result.ABORTED)) {
-            phase = BuildPhases.CANCELLED;
-          } else if (result.equals(Result.FAILURE)) {
-            phase = BuildPhases.FAILED;
-          } else if (result.equals(Result.UNSTABLE)) {
-            phase = BuildPhases.FAILED;
-          } else if (result.equals(Result.NOT_BUILT)) {
-            phase = BuildPhases.PENDING;
-          } else {
-            phase = BuildPhases.PENDING;
+          if (result != null) {
+            if (result.equals(Result.SUCCESS)) {
+              phase = BuildPhases.COMPLETE;
+            } else if (result.equals(Result.ABORTED)) {
+              phase = BuildPhases.CANCELLED;
+            } else if (result.equals(Result.FAILURE)) {
+              phase = BuildPhases.FAILED;
+            } else if (result.equals(Result.UNSTABLE)) {
+              phase = BuildPhases.FAILED;
+            } else {
+              phase = BuildPhases.PENDING;
+            }
           }
         }
       }
