@@ -1,12 +1,12 @@
 /**
  * Copyright (C) 2016 Red Hat, Inc.
- *
+ * <p/>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p/>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p/>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,6 +18,7 @@ package io.fabric8.jenkins.openshiftsync;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
 import hudson.util.XStream2;
+import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
@@ -30,6 +31,7 @@ import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -42,6 +44,8 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   public static final String EXTERNAL_BUILD_STRATEGY = "External";
   private final Logger logger = Logger.getLogger(getClass().getName());
   private final String defaultNamespace;
+
+  private static final Map<NamespaceName, Long> buildConfigVersions = new HashMap<>();
 
   public BuildConfigWatcher(String defaultNamespace) {
     this.defaultNamespace = defaultNamespace;
@@ -91,20 +95,36 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void upsertJob(BuildConfig buildConfig) throws IOException {
     if (isJenkinsBuildConfig(buildConfig)) {
-      String jobName = jobName(buildConfig, defaultNamespace);
-      Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
-      InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+      synchronized (buildConfigVersions) {
+        NamespaceName namespacedName = NamespaceName.create(buildConfig);
+        Long resourceVersion = getResourceVersion(buildConfig);
+        Long previousResourceVersion = buildConfigVersions.get(namespacedName);
 
-      Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
-      if (job == null) {
-        Jenkins.getInstance().createProjectFromXML(
-          jobName,
-          jobStream
-        );
-      } else {
-        Source source = new StreamSource(jobStream);
-        job.updateByXml(source);
-        job.save();
+        // lets only process this BuildConfig if the resourceVersion is newer than the last one we processed
+        if (previousResourceVersion == null || (resourceVersion != null && resourceVersion.longValue() > previousResourceVersion.longValue())) {
+          buildConfigVersions.put(namespacedName, resourceVersion);
+
+          String jobName = jobName(buildConfig, defaultNamespace);
+          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
+          InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+
+          Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
+          if (job == null) {
+            Jenkins.getInstance().createProjectFromXML(
+              jobName,
+              jobStream
+            );
+            logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+          } else {
+            Source source = new StreamSource(jobStream);
+            job.updateByXml(source);
+            job.save();
+            logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+          }
+        } else {
+          logger.info("Ignored out of order notification for BuildConfig " + namespacedName
+            + " with resourceVersion " + resourceVersion + " when we have already processed " + previousResourceVersion);
+        }
       }
     }
   }
@@ -116,19 +136,21 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       return;
     }
 
-    String jobName = jobName(buildConfig, defaultNamespace);
-    Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
-    if (job != null) {
-      job.delete();
-    }
+    // no longer a Jenkins build so lets delete it if it exists
+    deleteJob(buildConfig);
   }
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
     String jobName = jobName(buildConfig, defaultNamespace);
-    Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
-    if (job != null) {
-      job.delete();
+    NamespaceName namespaceName = NamespaceName.create(buildConfig);
+
+    synchronized (buildConfigVersions) {
+      Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
+      if (job != null) {
+        job.delete();
+      }
+      buildConfigVersions.remove(namespaceName);
     }
   }
 
@@ -148,4 +170,13 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     return false;
   }
 
+  public static Long getResourceVersion(HasMetadata hasMetadata) {
+    ObjectMeta metadata = hasMetadata.getMetadata();
+    String resourceVersionText = metadata.getResourceVersion();
+    Long resourceVersion = null;
+    if (resourceVersionText != null && resourceVersionText.length() > 0) {
+      resourceVersion = Long.parseLong(resourceVersionText);
+    }
+    return resourceVersion;
+  }
 }
