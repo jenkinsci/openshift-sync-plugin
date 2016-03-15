@@ -132,11 +132,27 @@
     </dependency>
 
     <dependency>
+      <groupId>org.jenkins-ci.plugins.pipeline-stage-view</groupId>
+      <artifactId>pipeline-rest-api</artifactId>
+      <version>1.0</version>
+    </dependency>
+
+
+    <!-- testing -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.pipeline-stage-view</groupId>
+      <artifactId>pipeline-stage-view</artifactId>
+      <version>1.0</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpclient</artifactId>
       <version>4.5.2</version>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 
   <build>
