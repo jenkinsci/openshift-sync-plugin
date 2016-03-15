@@ -19,14 +19,18 @@ import com.thoughtworks.xstream.annotations.XStreamOmitField;
 import hudson.Extension;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.Watch;
+import io.fabric8.openshift.api.model.BuildConfigList;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
 import jenkins.model.GlobalConfiguration;
+import jenkins.util.Timer;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @Extension
@@ -35,7 +39,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   @XStreamOmitField
   private final Logger logger = Logger.getLogger(getClass().getName());
 
-  private boolean enabled = false;
+  private boolean enabled = true;
 
   private String server;
 
@@ -102,6 +106,11 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   }
 
   private void configChange() {
+    if (namespace == null) {
+      namespace = System.getenv("KUBERNETES_NAMESPACE");
+    }
+    logger.info("using default kubernetes namespace: " + namespace);
+
     if (!enabled) {
       if (watch != null) {
         watch.close();
@@ -120,12 +129,36 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       Config config = configBuilder.build();
       openShiftClient = new DefaultOpenShiftClient(config);
 
+      final BuildConfigWatcher watcher = new BuildConfigWatcher(namespace);
+      final BuildConfigList buildConfigs;
       if (namespace != null && !namespace.isEmpty()) {
-        watch = openShiftClient.buildConfigs().inNamespace(namespace).watch(new BuildConfigWatcher());
+        watch = openShiftClient.buildConfigs().inNamespace(namespace).watch(watcher);
+        buildConfigs = openShiftClient.buildConfigs().inNamespace(namespace).list();
       } else {
-        watch = openShiftClient.buildConfigs().inAnyNamespace().watch(new BuildConfigWatcher());
+        watch = openShiftClient.buildConfigs().inAnyNamespace().watch(watcher);
+        buildConfigs = openShiftClient.buildConfigs().inAnyNamespace().list();
       }
 
+      // lets process the initial state
+      logger.info("Now handling startup build configs!!");
+      if (buildConfigs != null) {
+        // lets do this in a background thread to avoid errors like:
+        //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
+        Runnable task = new Runnable() {
+          @Override
+          public void run() {
+            logger.info("loading initial BuildConfigs resources");
+
+            try {
+              watcher.onInitialBuildConfigs(buildConfigs);
+              logger.info("loaded initial BuildConfigs resources");
+            } catch (Exception e) {
+              logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
+            }
+          }
+        };
+        Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
+      }
     }
   }
 
