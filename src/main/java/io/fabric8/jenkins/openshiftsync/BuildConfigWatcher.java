@@ -36,12 +36,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.isJenkinsBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.jobName;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
 
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
-
-  public static final String EXTERNAL_BUILD_STRATEGY = "External";
   private final Logger logger = Logger.getLogger(getClass().getName());
   private final String defaultNamespace;
 
@@ -101,11 +100,15 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         Long previousResourceVersion = buildConfigVersions.get(namespacedName);
 
         // lets only process this BuildConfig if the resourceVersion is newer than the last one we processed
-        if (previousResourceVersion == null || (resourceVersion != null && resourceVersion.longValue() > previousResourceVersion.longValue())) {
+        if (previousResourceVersion == null || (resourceVersion != null && resourceVersion > previousResourceVersion)) {
           buildConfigVersions.put(namespacedName, resourceVersion);
 
           String jobName = jobName(buildConfig, defaultNamespace);
           Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
+          if (jobFromBuildConfig == null) {
+            return;
+          }
+
           InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
 
           Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
@@ -152,22 +155,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       }
       buildConfigVersions.remove(namespaceName);
     }
-  }
-
-  private boolean isJenkinsBuildConfig(BuildConfig buildConfig) {
-    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(buildConfig.getSpec().getStrategy().getType())) {
-      return true;
-    }
-    ObjectMeta metadata = buildConfig.getMetadata();
-    if (metadata != null) {
-      Map<String, String> annotations = metadata.getAnnotations();
-      if (annotations != null) {
-        if (annotations.get("fabric8.link.jenkins.job/label") != null) {
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   public static Long getResourceVersion(HasMetadata hasMetadata) {
