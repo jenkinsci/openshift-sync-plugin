@@ -278,6 +278,10 @@ public class BuildSyncRunListener extends RunListener<Run> {
 */
     annotations.put(ANNOTATION_PHASE, phase);
 
+    if (logger.isLoggable(Level.FINE)) {
+      logger.fine("generated build in namespace " + namespace + " with name: " + name + " phase: " + phase + " data: " + found);
+    }
+
     if (create) {
       logger.info("creating build in namespace " + namespace + " with name: " + name + " phase: " + phase);
       openShiftClient.builds().inNamespace(namespace).withName(name).create(found);
