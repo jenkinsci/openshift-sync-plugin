@@ -17,20 +17,27 @@ package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Job;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.api.model.Service;
+import io.fabric8.kubernetes.api.model.ServiceSpec;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
+import io.fabric8.openshift.api.model.Route;
+import io.fabric8.openshift.api.model.RouteSpec;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
 
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URL;
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
 
 /**
  */
 public class OpenShiftUtils {
+  private final static Logger logger = Logger.getLogger(OpenShiftUtils.class.getName());
 
   /**
    * Returns a newly created client for OpenShift from the given optional server URL
@@ -77,7 +84,7 @@ public class OpenShiftUtils {
     if (metadata != null) {
       Map<String, String> annotations = metadata.getAnnotations();
       if (annotations != null) {
-        if (annotations.get(Constants.ANNOTATION_JENKINS_BUILD_URL) != null) {
+        if (annotations.get(Constants.ANNOTATION_JENKINS_BUILD_URI) != null) {
           return true;
         }
       }
@@ -147,7 +154,7 @@ public class OpenShiftUtils {
     if (metadata != null) {
       Map<String, String> annotations = metadata.getAnnotations();
       if (annotations != null) {
-        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URL);
+        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URI);
         if (anotherUrl != null && anotherUrl.equals(url)) {
           return true;
         }
@@ -165,7 +172,7 @@ public class OpenShiftUtils {
     if (metadata != null) {
       Map<String, String> annotations = metadata.getAnnotations();
       if (annotations != null) {
-        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URL);
+        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URI);
         if (anotherUrl == null || anotherUrl.length() == 0) {
           // lets get the BuildCOnfig name and check that maps to a Jenkins job
           String jobName = OpenShiftUtils.jenkinsJobName(build, defaultNamespace);
@@ -179,5 +186,53 @@ public class OpenShiftUtils {
       }
     }
     return false;
+  }
+
+  /**
+   * Returns the public URL of the given service
+   *
+   * @param openShiftClient the OpenShiftClient to use
+   * @param protocolText the protocol text part of a URL such as <code>http://</code>
+   * @param namespace the Kubernetes namespace
+   * @param serviceName the service name
+   * @return the external URL of the service
+   */
+  public static String getExternalServiceUrl(OpenShiftClient openShiftClient, String protocolText, String namespace, String serviceName) {
+    try {
+      Route route = openShiftClient.routes().inNamespace(namespace).withName(serviceName).get();
+      if (route != null) {
+        RouteSpec spec = route.getSpec();
+        if (spec != null) {
+          String host = spec.getHost();
+          if (host != null && host.length() > 0) {
+            return protocolText + host;
+          }
+        }
+      }
+    } catch (Exception e) {
+      logger.log(Level.WARNING, "Could not find Route for namespace " + namespace + " service " + serviceName + ". " + e, e);
+    }
+    // lets try the portalIP instead
+    try {
+      Service service = openShiftClient.services().inNamespace(namespace).withName(serviceName).get();
+      if (service != null) {
+        ServiceSpec spec = service.getSpec();
+        if (spec != null) {
+          String host = spec.getPortalIP();
+          if (host != null && host.length() > 0) {
+            return protocolText + host;
+          }
+        }
+      }
+    } catch (Exception e) {
+      logger.log(Level.WARNING, "Could not find Route for namespace " + namespace + " service " + serviceName + ". " + e, e);
+    }
+
+    // lets default to the service DNS name
+    return protocolText + serviceName;
+  }
+
+  public static String getJenkinsURL(OpenShiftClient openShiftClient, String namespace) {
+    return getExternalServiceUrl(openShiftClient, "http://", namespace ,"jenkins");
   }
 }

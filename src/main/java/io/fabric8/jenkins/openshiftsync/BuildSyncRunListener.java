@@ -49,7 +49,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URL;
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_LOG_URL;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STATUS_JSON;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_OPENSHIFT_BUILD_NUMBER;
 
@@ -198,6 +199,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
     String buildName = buildConfigName + "-" + buildNumber;
     String buildNumberText = "" + buildNumber;
 
+    String rootUrl = OpenShiftUtils.getJenkinsURL(openShiftClient, defaultNamespace);
+    String logsUrl = joinPaths(rootUrl, url, "/consoleText");
+
     boolean create = false;
     if (found == null && openshiftBuild != null) {
       found = openshiftBuild;
@@ -224,7 +228,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
         addToLabels(Constants.LABEL_BUILDCONFIG, buildConfigName).
         addToLabels(Constants.LABEL_OPENSHIFT_BUILD_CONFIG_NAME, buildConfigName).
         addToAnnotations(ANNOTATION_OPENSHIFT_BUILD_NUMBER, buildNumberText).
-        addToAnnotations(ANNOTATION_JENKINS_BUILD_URL, url).
+        addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, url).
+        addToAnnotations(ANNOTATION_JENKINS_LOG_URL, logsUrl).
         endMetadata().
         withNewSpecLike(buildSpec).
         endSpec().
@@ -248,8 +253,11 @@ public class BuildSyncRunListener extends RunListener<Run> {
     if (!annotations.containsKey(ANNOTATION_OPENSHIFT_BUILD_NUMBER)) {
       annotations.put(ANNOTATION_OPENSHIFT_BUILD_NUMBER, buildNumberText);
     }
-    if (!annotations.containsKey(ANNOTATION_JENKINS_BUILD_URL)) {
-      annotations.put(ANNOTATION_JENKINS_BUILD_URL, url);
+    if (!annotations.containsKey(ANNOTATION_JENKINS_BUILD_URI)) {
+      annotations.put(ANNOTATION_JENKINS_BUILD_URI, url);
+    }
+    if (!annotations.containsKey(ANNOTATION_JENKINS_LOG_URL)) {
+      annotations.put(ANNOTATION_JENKINS_LOG_URL, logsUrl);
     }
     String name = metadata.getName();
 
