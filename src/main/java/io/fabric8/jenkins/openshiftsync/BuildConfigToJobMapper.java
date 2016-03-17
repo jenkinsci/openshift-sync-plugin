@@ -17,15 +17,18 @@ package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Job;
 import hudson.plugins.git.GitSCM;
-import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.BuildConfig;
+import io.fabric8.openshift.api.model.BuildConfigSpec;
+import io.fabric8.openshift.api.model.BuildSource;
+import io.fabric8.openshift.api.model.BuildStrategy;
+import io.fabric8.openshift.api.model.ExternalBuildStrategy;
+import io.fabric8.openshift.api.model.JenkinsPipelineStrategy;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
-import java.util.Map;
 import java.util.logging.Logger;
 
 public class BuildConfigToJobMapper {
@@ -35,61 +38,48 @@ public class BuildConfigToJobMapper {
   public static final String DEFAULT_JENKINS_FILEPATH = "Jenkinsfile";
 
   public static Job<WorkflowJob, WorkflowRun> mapBuildConfigToJob(BuildConfig bc, String defaultNamespace) {
-    if (!isJenkinsBuildConfig(bc)) {
+    if (!OpenShiftUtils.isJenkinsBuildConfig(bc)) {
       return null;
     }
 
-    WorkflowJob job = new WorkflowJob(Jenkins.getInstance(), jobName(bc, defaultNamespace));
+    WorkflowJob job = new WorkflowJob(Jenkins.getInstance(), OpenShiftUtils.jenkinsJobName(bc, defaultNamespace));
 
-    // Is this a Jenkinsfile from Git SCM?
-    if (bc.getSpec().getStrategy().getExternalStrategy().getJenkinsPipelineStrategy().getJenkinsfile() == null) {
-      if (bc.getSpec().getSource() != null &&
-      bc.getSpec().getSource().getGit() != null &&
-      bc.getSpec().getSource().getGit().getUri() != null){
-        String jenkinsfilePath = DEFAULT_JENKINS_FILEPATH;
-        if (bc.getSpec().getStrategy().getExternalStrategy().getJenkinsPipelineStrategy().getJenkinsfilePath() != null) {
-          jenkinsfilePath = bc.getSpec().getStrategy().getExternalStrategy().getJenkinsPipelineStrategy().getJenkinsfilePath();
+    BuildConfigSpec spec = bc.getSpec();
+    BuildSource source = null;
+    String jenkinsfile = null;
+    String jenkinsfilePath = null;
+    if (spec != null) {
+      source = spec.getSource();
+      BuildStrategy strategy = spec.getStrategy();
+      if (strategy != null) {
+        ExternalBuildStrategy externalStrategy = strategy.getExternalStrategy();
+        if (externalStrategy != null) {
+          JenkinsPipelineStrategy jenkinsPipelineStrategy = externalStrategy.getJenkinsPipelineStrategy();
+          if (jenkinsPipelineStrategy != null) {
+            jenkinsfile = jenkinsPipelineStrategy.getJenkinsfile();
+            jenkinsfilePath = jenkinsPipelineStrategy.getJenkinsfilePath();
+          }
         }
-        GitSCM scm = new GitSCM(bc.getSpec().getSource().getGit().getUri());
-
+      }
+    }
+    if (jenkinsfile == null) {
+      // Is this a Jenkinsfile from Git SCM?
+      if (source != null &&
+        source.getGit() != null &&
+        source.getGit().getUri() != null) {
+        if (jenkinsfilePath == null) {
+          jenkinsfilePath = DEFAULT_JENKINS_FILEPATH;
+        }
+        GitSCM scm = new GitSCM(source.getGit().getUri());
         job.setDefinition(new CpsScmFlowDefinition(scm, jenkinsfilePath));
       } else {
         LOGGER.warning("BuildConfig does not contain source repository information - cannot map BuildConfig to Jenkins job");
         return null;
       }
     } else {
-      job.setDefinition(new CpsFlowDefinition(bc.getSpec().getStrategy().getExternalStrategy().getJenkinsPipelineStrategy().getJenkinsfile()));
+      job.setDefinition(new CpsFlowDefinition(jenkinsfile));
     }
     return job;
-  }
-
-  public static String jobName(BuildConfig bc, String defaultNamespace) {
-    String namespace = bc.getMetadata().getNamespace();
-    String name = bc.getMetadata().getName();
-    if (namespace == null || namespace.length() == 0 || namespace.equals(defaultNamespace)) {
-      return name;
-    }
-    return namespace + "-" + name;
-  }
-
-  static boolean isJenkinsBuildConfig(BuildConfig bc) {
-    if (EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(bc.getSpec().getStrategy().getType()) &&
-      bc.getSpec().getStrategy().getExternalStrategy() != null &&
-      bc.getSpec().getStrategy().getExternalStrategy().getJenkinsPipelineStrategy() != null) {
-      return true;
-    }
-
-    ObjectMeta metadata = bc.getMetadata();
-    if (metadata != null) {
-      Map<String, String> annotations = metadata.getAnnotations();
-      if (annotations != null) {
-        if (annotations.get("fabric8.link.jenkins.job/label") != null) {
-          return true;
-        }
-      }
-    }
-
-    return false;
   }
 
 }

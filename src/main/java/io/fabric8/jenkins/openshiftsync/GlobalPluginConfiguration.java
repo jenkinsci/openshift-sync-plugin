@@ -20,6 +20,7 @@ import hudson.Extension;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.openshift.api.model.BuildConfigList;
+import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
@@ -32,6 +33,8 @@ import org.kohsuke.stapler.StaplerRequest;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
 
 @Extension
 public class GlobalPluginConfiguration extends GlobalConfiguration {
@@ -49,7 +52,10 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   private OpenShiftClient openShiftClient = null;
 
   @XStreamOmitField
-  private Watch watch;
+  private Watch buildConfigWatch;
+
+  @XStreamOmitField
+  private Watch buildWatch;
 
   @DataBoundConstructor
   public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
@@ -112,8 +118,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
     logger.info("using default kubernetes namespace: " + namespace);
 
     if (!enabled) {
-      if (watch != null) {
-        watch.close();
+      if (buildConfigWatch != null) {
+        buildConfigWatch.close();
       }
       if (openShiftClient != null) {
         openShiftClient.close();
@@ -128,15 +134,22 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       }
       Config config = configBuilder.build();
       openShiftClient = new DefaultOpenShiftClient(config);
+      this.namespace = getNamespaceOrUseDefault(namespace, openShiftClient);
 
-      final BuildConfigWatcher watcher = new BuildConfigWatcher(namespace);
+      final BuildConfigWatcher buildConfigWatcher = new BuildConfigWatcher(namespace);
+      final BuildWatcher buildWatcher = new BuildWatcher(namespace);
       final BuildConfigList buildConfigs;
+      final BuildList builds;
       if (namespace != null && !namespace.isEmpty()) {
-        watch = openShiftClient.buildConfigs().inNamespace(namespace).watch(watcher);
+        buildConfigWatch = openShiftClient.buildConfigs().inNamespace(namespace).watch(buildConfigWatcher);
+        buildWatch = openShiftClient.builds().inNamespace(namespace).watch(buildWatcher);
         buildConfigs = openShiftClient.buildConfigs().inNamespace(namespace).list();
+        builds = openShiftClient.builds().inNamespace(namespace).list();
       } else {
-        watch = openShiftClient.buildConfigs().inAnyNamespace().watch(watcher);
+        buildConfigWatch = openShiftClient.buildConfigs().inAnyNamespace().watch(buildConfigWatcher);
+        buildWatch = openShiftClient.builds().inAnyNamespace().watch(buildWatcher);
         buildConfigs = openShiftClient.buildConfigs().inAnyNamespace().list();
+        builds = openShiftClient.builds().inAnyNamespace().list();
       }
 
       // lets process the initial state
@@ -150,10 +163,16 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
             logger.info("loading initial BuildConfigs resources");
 
             try {
-              watcher.onInitialBuildConfigs(buildConfigs);
+              buildConfigWatcher.onInitialBuildConfigs(buildConfigs);
               logger.info("loaded initial BuildConfigs resources");
             } catch (Exception e) {
               logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
+            }
+            try {
+              buildWatcher.onInitialBuilds(builds);
+              logger.info("loaded initial Builds resources");
+            } catch (Exception e) {
+              logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
             }
           }
         };

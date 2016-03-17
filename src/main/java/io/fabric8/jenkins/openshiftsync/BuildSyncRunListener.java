@@ -38,6 +38,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,24 +49,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_LOG_URL;
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STATUS_JSON;
+import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_OPENSHIFT_BUILD_NUMBER;
+
 /**
  */
 @Extension
 public class BuildSyncRunListener extends RunListener<Run> {
-  public static final String ANNOTATION_PHASE = "openshift.io/phase";
-  public static final String ANNOTATION_JENKINS_BUILD_URL = "openshift.io/jenkins-build-uri";
-  public static final String ANNOTATION_JENKINS_STATUS_JSON = "openshift.io/jenkins-status-json";
-  public static final String ANNOTATION_OPENSHIFT_BUILD_NUMBER = "openshift.io/build.number";
-
-  public static final String LABEL_BUILDCONFIG = "buildconfig";
-  public static final String LABEL_OPENSHIFT_BUILD_CONFIG_NAME = "openshift.io/build-config.name";
 
   @XStreamOmitField
   private final Logger logger = Logger.getLogger(getClass().getName());
 
   private long pollPeriodMs = 2000;
   private String server;
-  private String namespace;
+  private String defaultNamespace;
 
   @XStreamOmitField
   private OpenShiftClient openShiftClient;
@@ -76,20 +75,20 @@ public class BuildSyncRunListener extends RunListener<Run> {
   private AtomicBoolean timerStarted = new AtomicBoolean(false);
 
   public BuildSyncRunListener() {
-    openShiftClient = init();
+    init();
   }
 
   @DataBoundConstructor
-  public BuildSyncRunListener(String server, String namespace, long pollPeriodMs) {
+  public BuildSyncRunListener(String server, String defaultNamespace, long pollPeriodMs) {
     this.server = server;
-    this.namespace = namespace;
+    this.defaultNamespace = defaultNamespace;
     this.pollPeriodMs = pollPeriodMs;
+    init();
   }
 
-  private OpenShiftClient init() {
-    OpenShiftClient openShiftClient;
+  private void init() {
     openShiftClient = OpenShiftUtils.createOpenShiftClient(server);
-    return openShiftClient;
+    defaultNamespace = OpenShiftUtils.getNamespaceOrUseDefault(defaultNamespace,openShiftClient);
   }
 
   @Override
@@ -175,49 +174,62 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
   }
 
-  private void upsertBuild(BuildName buildName, Run run, String json, String url) {
-    String namespace = getNamespaceOrDefault();
+  private synchronized void upsertBuild(BuildName jobAndBuildName, Run run, String json, String url) {
     // TODO should we check if we can find the buildConfig and if not do we need to split by namespace + name?
-    String buildConfigName = buildName.getJobName();
+    String buildConfigName = jobAndBuildName.getJobName();
 
-    BuildList buildList = openShiftClient.builds().inNamespace(namespace).withLabel(LABEL_BUILDCONFIG, buildConfigName).list();
+    BuildList buildList = openShiftClient.builds().inNamespace(defaultNamespace).withLabel(Constants.LABEL_BUILDCONFIG, buildConfigName).list();
     Build found = null;
+    Build openshiftBuild = null;
     int buildCount = 0;
+    List<Build> items = Collections.EMPTY_LIST;
     if (buildList != null) {
-      List<Build> items = buildList.getItems();
-      buildCount = items.size();
-      for (Build build : items) {
-        if (openShiftBuildMapsToJenkinsBuild(buildName, build, url)) {
-          found = build;
-        }
+      items = buildList.getItems();
+    }
+    buildCount = items.size();
+    for (Build build : items) {
+      if (OpenShiftUtils.openShiftBuildMapsToJenkinsBuild(jobAndBuildName, build, url)) {
+        found = build;
+      } else if (OpenShiftUtils.isJenkinsBuildCreatedByOpenShift(build, defaultNamespace)) {
+        openshiftBuild = build;
       }
     }
 
+    int buildNumber = buildCount + 1;
+    String buildName = buildConfigName + "-" + buildNumber;
+    String buildNumberText = "" + buildNumber;
+
+    String rootUrl = OpenShiftUtils.getJenkinsURL(openShiftClient, defaultNamespace);
+    String logsUrl = joinPaths(rootUrl, url, "/consoleText");
+
     boolean create = false;
+    if (found == null && openshiftBuild != null) {
+      found = openshiftBuild;
+      logger.info("reusing OpenShift Build created by OpenShift for the Jenkins Build status " + NamespaceName.create(found));
+    }
     if (found == null) {
       create = true;
-      int buildNumber = buildCount + 1;
-      String name = buildConfigName + "-" + buildNumber;
       BuildConfig buildConfig;
       try {
-        buildConfig = openShiftClient.buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+        buildConfig = openShiftClient.buildConfigs().inNamespace(defaultNamespace).withName(buildConfigName).get();
       } catch (Exception e) {
-        logger.log(Level.WARNING, "Failed to find BuildConfig for namespace " + namespace + " name + " + buildConfigName + ". " + e, e);
+        logger.log(Level.WARNING, "Failed to find BuildConfig for namespace " + defaultNamespace + " buildName + " + buildConfigName + ". " + e, e);
         return;
       }
       if (buildConfig == null) {
-        logger.warning("No BuildConfig for namespace " + namespace + " name + " + buildConfigName);
+        logger.warning("No BuildConfig for namespace " + defaultNamespace + " buildName + " + buildConfigName);
         return;
       }
       BuildSpec buildSpec = createBuildSpec(buildConfig);
       found = new BuildBuilder().
         withNewMetadata().
-        withName(name).
-        withNamespace(namespace).
-        addToLabels(LABEL_BUILDCONFIG, buildConfigName).
-        addToLabels(LABEL_OPENSHIFT_BUILD_CONFIG_NAME, buildConfigName).
-        addToAnnotations(ANNOTATION_OPENSHIFT_BUILD_NUMBER, "" + buildNumber).
-        addToAnnotations(ANNOTATION_JENKINS_BUILD_URL, url).
+        withName(buildName).
+        withNamespace(defaultNamespace).
+        addToLabels(Constants.LABEL_BUILDCONFIG, buildConfigName).
+        addToLabels(Constants.LABEL_OPENSHIFT_BUILD_CONFIG_NAME, buildConfigName).
+        addToAnnotations(ANNOTATION_OPENSHIFT_BUILD_NUMBER, buildNumberText).
+        addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, url).
+        addToAnnotations(ANNOTATION_JENKINS_LOG_URL, logsUrl).
         endMetadata().
         withNewSpecLike(buildSpec).
         endSpec().
@@ -236,13 +248,24 @@ public class BuildSyncRunListener extends RunListener<Run> {
       metadata.setAnnotations(annotations);
     }
     annotations.put(ANNOTATION_JENKINS_STATUS_JSON, json);
+
+    // if this Build was created by OpenShift lets add any missing annotations
+    if (!annotations.containsKey(ANNOTATION_OPENSHIFT_BUILD_NUMBER)) {
+      annotations.put(ANNOTATION_OPENSHIFT_BUILD_NUMBER, buildNumberText);
+    }
+    if (!annotations.containsKey(ANNOTATION_JENKINS_BUILD_URI)) {
+      annotations.put(ANNOTATION_JENKINS_BUILD_URI, url);
+    }
+    if (!annotations.containsKey(ANNOTATION_JENKINS_LOG_URL)) {
+      annotations.put(ANNOTATION_JENKINS_LOG_URL, logsUrl);
+    }
     String name = metadata.getName();
 
     String phase = BuildPhases.NEW;
     if (run == null) {
-      run = JenkinsUtils.getRun(buildName);
+      run = JenkinsUtils.getRun(jobAndBuildName);
       if (run == null) {
-        logger.warning("Could not find Jenkins Job Run for " + buildName);
+        logger.warning("Could not find Jenkins Job Run for " + jobAndBuildName);
       }
     }
     if (run != null) {
@@ -276,20 +299,20 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
     status.setPhase(phase);
 */
-    annotations.put(ANNOTATION_PHASE, phase);
+    annotations.put(Constants.ANNOTATION_PHASE, phase);
 
     if (logger.isLoggable(Level.FINE)) {
-      logger.fine("generated build in namespace " + namespace + " with name: " + name + " phase: " + phase + " data: " + found);
+      logger.fine("generated build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase + " data: " + found);
     }
 
     if (create) {
-      logger.info("creating build in namespace " + namespace + " with name: " + name + " phase: " + phase);
-      openShiftClient.builds().inNamespace(namespace).withName(name).create(found);
+      logger.info("creating build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
+      openShiftClient.builds().inNamespace(defaultNamespace).withName(name).create(found);
     } else {
       // lets clear the status as it fails if we try to update it!
-      found.setStatus(null);
-      logger.info("replacing build in namespace " + namespace + " with name: " + name + " phase: " + phase);
-      openShiftClient.builds().inNamespace(namespace).withName(name).replace(found);
+      //found.setStatus(null);
+      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
+      openShiftClient.builds().inNamespace(defaultNamespace).withName(name).replace(found);
     }
   }
 
@@ -309,38 +332,11 @@ public class BuildSyncRunListener extends RunListener<Run> {
     return answer;
   }
 
-  private String getNamespaceOrDefault() {
-    String namespace = this.namespace;
-    if (namespace == null || namespace.isEmpty()) {
-      namespace = openShiftClient.getNamespace();
-      if (namespace == null || namespace.isEmpty()) {
-        namespace = "default";
-      }
-    }
-    return namespace;
-  }
-
-  /**
-   * Returns true if this OpenShift Build maps to the given Jenkins job build
-   */
-  private boolean openShiftBuildMapsToJenkinsBuild(BuildName buildName, Build build, String url) {
-    ObjectMeta metadata = build.getMetadata();
-    if (metadata != null) {
-      Map<String, String> annotations = metadata.getAnnotations();
-      if (annotations != null) {
-        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URL);
-        if (anotherUrl != null && anotherUrl.equals(url)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   /**
    * Returns true if we should poll the status of this run
    *
    * @param run the Run to test against
+   * @return true if the should poll the status of this build run
    */
   protected boolean shouldPollRun(Run run) {
     return run instanceof WorkflowRun;

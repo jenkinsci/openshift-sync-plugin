@@ -34,11 +34,11 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.isJenkinsBuildConfig;
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.jobName;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private final Logger logger = Logger.getLogger(getClass().getName());
@@ -87,7 +87,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           break;
       }
     } catch (IOException | InterruptedException e) {
-      e.printStackTrace();
+      logger.log(Level.WARNING, "Caught: " + e, e);
     }
   }
 
@@ -103,7 +103,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         if (previousResourceVersion == null || (resourceVersion != null && resourceVersion > previousResourceVersion)) {
           buildConfigVersions.put(namespacedName, resourceVersion);
 
-          String jobName = jobName(buildConfig, defaultNamespace);
+          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
           Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
           if (jobFromBuildConfig == null) {
             return;
@@ -145,7 +145,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
-    String jobName = jobName(buildConfig, defaultNamespace);
+    String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
     NamespaceName namespaceName = NamespaceName.create(buildConfig);
 
     synchronized (buildConfigVersions) {
