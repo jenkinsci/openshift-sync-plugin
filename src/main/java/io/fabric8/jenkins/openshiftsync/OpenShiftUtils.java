@@ -62,9 +62,8 @@ public class OpenShiftUtils {
    * a Jenkins Job
    */
   public static boolean isJenkinsBuildConfig(BuildConfig bc) {
-    if (BuildConfigToJobMapper.EXTERNAL_BUILD_STRATEGY.equalsIgnoreCase(bc.getSpec().getStrategy().getType()) &&
-      bc.getSpec().getStrategy().getExternalStrategy() != null &&
-      bc.getSpec().getStrategy().getExternalStrategy().getJenkinsPipelineStrategy() != null) {
+    if (BuildConfigToJobMapper.JENKINS_PIPELINE_BUILD_STRATEGY.equalsIgnoreCase(bc.getSpec().getStrategy().getType()) &&
+      bc.getSpec().getStrategy().getJenkinsPipelineStrategy() != null) {
       return true;
     }
 
