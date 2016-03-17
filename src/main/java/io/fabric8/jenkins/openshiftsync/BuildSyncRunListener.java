@@ -336,6 +336,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
    * Returns true if we should poll the status of this run
    *
    * @param run the Run to test against
+   * @return true if the should poll the status of this build run
    */
   protected boolean shouldPollRun(Run run) {
     return run instanceof WorkflowRun;
