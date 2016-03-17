@@ -21,8 +21,7 @@ import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.BuildStrategy;
-import io.fabric8.openshift.api.model.ExternalBuildStrategy;
-import io.fabric8.openshift.api.model.JenkinsPipelineStrategy;
+import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition;
@@ -32,10 +31,9 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import java.util.logging.Logger;
 
 public class BuildConfigToJobMapper {
-  private static final Logger LOGGER = Logger.getLogger(BuildConfigToJobMapper.class.getName());
-
-  public static final String EXTERNAL_BUILD_STRATEGY = "External";
+  public static final String JENKINS_PIPELINE_BUILD_STRATEGY = "JenkinsPipeline";
   public static final String DEFAULT_JENKINS_FILEPATH = "Jenkinsfile";
+  private static final Logger LOGGER = Logger.getLogger(BuildConfigToJobMapper.class.getName());
 
   public static Job<WorkflowJob, WorkflowRun> mapBuildConfigToJob(BuildConfig bc, String defaultNamespace) {
     if (!OpenShiftUtils.isJenkinsBuildConfig(bc)) {
@@ -52,13 +50,10 @@ public class BuildConfigToJobMapper {
       source = spec.getSource();
       BuildStrategy strategy = spec.getStrategy();
       if (strategy != null) {
-        ExternalBuildStrategy externalStrategy = strategy.getExternalStrategy();
-        if (externalStrategy != null) {
-          JenkinsPipelineStrategy jenkinsPipelineStrategy = externalStrategy.getJenkinsPipelineStrategy();
-          if (jenkinsPipelineStrategy != null) {
-            jenkinsfile = jenkinsPipelineStrategy.getJenkinsfile();
-            jenkinsfilePath = jenkinsPipelineStrategy.getJenkinsfilePath();
-          }
+        JenkinsPipelineBuildStrategy jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
+        if (jenkinsPipelineStrategy != null) {
+          jenkinsfile = jenkinsPipelineStrategy.getJenkinsfile();
+          jenkinsfilePath = jenkinsPipelineStrategy.getJenkinsfilePath();
         }
       }
     }
