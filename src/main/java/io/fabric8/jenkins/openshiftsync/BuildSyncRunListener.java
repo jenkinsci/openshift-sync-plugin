@@ -55,6 +55,8 @@ import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STAT
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_OPENSHIFT_BUILD_NUMBER;
 
 /**
+ * Listens to Jenkins Job build {@link Run} start and stop then ensure there's a suitable {@link Build} object in
+ * OpenShift thats updated correctly with the current status, logsURL and metrics
  */
 @Extension
 public class BuildSyncRunListener extends RunListener<Run> {

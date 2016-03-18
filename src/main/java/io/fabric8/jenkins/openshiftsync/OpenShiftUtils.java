@@ -22,6 +22,9 @@ import io.fabric8.kubernetes.api.model.ServiceSpec;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
+import io.fabric8.openshift.api.model.BuildConfigSpec;
+import io.fabric8.openshift.api.model.BuildSource;
+import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteSpec;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
@@ -281,5 +284,45 @@ public class OpenShiftUtils {
    */
   public static String getJenkinsURL(OpenShiftClient openShiftClient, String namespace) {
     return getExternalServiceUrl(openShiftClient, "http://", namespace ,"jenkins");
+  }
+
+  /**
+   * Lazily creates the GitSource if need be then updates the git URL
+   *  @param buildConfig the BuildConfig to update
+   * @param gitUrl the URL to the git repo
+   * @param ref
+   */
+  public static void updateGitSourceUrl(BuildConfig buildConfig, String gitUrl, String ref) {
+    BuildConfigSpec spec = buildConfig.getSpec();
+    if (spec == null) {
+      spec = new BuildConfigSpec();
+      buildConfig.setSpec(spec);
+    }
+    BuildSource source = spec.getSource();
+    if (source == null) {
+      source = new BuildSource();
+      spec.setSource(source);
+    }
+    source.setType("Git");
+    GitBuildSource gitSource = source.getGit();
+    if (gitSource == null) {
+      gitSource = new GitBuildSource();
+      source.setGit(gitSource);
+    }
+    gitSource.setUri(gitUrl);
+    gitSource.setRef(ref);
+  }
+
+  /**
+   * Maps a Jenkins Job name to an ObjectShift BuildConfig name
+   *
+   * @return the namespaced name for the BuildConfig
+   * @param jobName the job to associate to a BuildConfig name
+   * @param defaultNamespace the default namespace that Jenkins is running inside
+   */
+  public static NamespaceName buildConfigNameFromJenkinsJobName(String jobName, String defaultNamespace) {
+    // TODO lets detect the namespace separator in the jobName for cases where a jenkins is used for
+    // BuildConfigs in multiple namespaces?
+    return new NamespaceName(defaultNamespace, jobName);
   }
 }

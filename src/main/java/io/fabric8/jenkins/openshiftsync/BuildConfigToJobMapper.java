@@ -16,18 +16,24 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Job;
+import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
+import hudson.scm.SCM;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.BuildStrategy;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import jenkins.model.Jenkins;
+import org.eclipse.jgit.transport.RemoteConfig;
+import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition;
+import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
+import java.util.List;
 import java.util.logging.Logger;
 
 public class BuildConfigToJobMapper {
@@ -77,4 +83,71 @@ public class BuildConfigToJobMapper {
     return job;
   }
 
+  /**
+   * Updates the {@link BuildConfig} if the Jenkins {@link WorkflowJob} changes
+   *
+   * @param job the job thats been updated via Jenkins
+   * @param buildConfig the OpenShift BuildConfig to update
+   * @return true if the BuildConfig was changed
+   */
+  public static boolean updateBuildConfigFromJob(WorkflowJob job, BuildConfig buildConfig) {
+    NamespaceName namespaceName = NamespaceName.create(buildConfig);
+    JenkinsPipelineBuildStrategy jenkinsPipelineStrategy = null;
+    BuildConfigSpec spec = buildConfig.getSpec();
+    if (spec != null) {
+      BuildStrategy strategy = spec.getStrategy();
+      if (strategy != null) {
+        jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
+      }
+    }
+    if (jenkinsPipelineStrategy == null) {
+      LOGGER.warning("No jenkinsPipelineStrategy available in the BuildConfig " + namespaceName);
+    } else {
+      FlowDefinition definition = job.getDefinition();
+      if (definition instanceof CpsScmFlowDefinition) {
+        CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
+        String scriptPath = cpsScmFlowDefinition.getScriptPath();
+        if (scriptPath != null && scriptPath.trim().length() > 0) {
+          jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
+
+          SCM scm = cpsScmFlowDefinition.getScm();
+          if (scm instanceof GitSCM) {
+            GitSCM gitSCM = (GitSCM) scm;
+            List<RemoteConfig> repositories = gitSCM.getRepositories();
+            if (repositories != null && repositories.size() > 0) {
+              RemoteConfig remoteConfig = repositories.get(0);
+              List<URIish> urIs = remoteConfig.getURIs();
+              if (urIs != null && urIs.size() > 0) {
+                URIish urIish = urIs.get(0);
+                String gitUrl = urIish.toString();
+                if (gitUrl != null && gitUrl.length() > 0) {
+                  List<BranchSpec> branches = gitSCM.getBranches();
+                  if (branches != null && branches.size() > 0) {
+                    BranchSpec branchSpec = branches.get(0);
+                    String branch = branchSpec.getName();
+                    while (branch.startsWith("*") || branch.startsWith("/")) {
+                      branch = branch.substring(1);
+                    }
+                  }
+                  String ref = null;
+                  OpenShiftUtils.updateGitSourceUrl(buildConfig, gitUrl, ref);
+                }
+              }
+            }
+          }
+          return true;
+        }
+      } else if (definition instanceof CpsFlowDefinition) {
+        CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
+        String jenkinsfile = cpsFlowDefinition.getScript();
+        if (jenkinsfile != null && jenkinsfile.trim().length() > 0) {
+          jenkinsPipelineStrategy.setJenkinsfile(jenkinsfile);
+          return true;
+        }
+      } else {
+        LOGGER.warning("Cannot update BuildConfig " + namespaceName + " as the definition is of class " + (definition == null ? "null" : definition.getClass().getName()));
+      }
+    }
+    return false;
+  }
 }

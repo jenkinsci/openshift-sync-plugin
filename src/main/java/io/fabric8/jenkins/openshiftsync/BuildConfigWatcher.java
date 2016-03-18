@@ -34,21 +34,38 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 
+/**
+ * Watches {@link BuildConfig} objects in OpenShift and for WorkflowJobs we ensure there is a
+ * suitable Jenkins Job object defined with the correct configuration
+ */
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
+  private static final AtomicBoolean openshiftUpdatingJob = new AtomicBoolean(false);
+  private static final Map<NamespaceName, Long> buildConfigVersions = new HashMap<>();
+
   private final Logger logger = Logger.getLogger(getClass().getName());
   private final String defaultNamespace;
 
-  private static final Map<NamespaceName, Long> buildConfigVersions = new HashMap<>();
+  /**
+   * Determines if an update to a Job comes from OpenShift via a {@link BuildConfig} change or
+   * via Jenkins itself (REST API, web console etc)
+   *
+   * @return true if OpenShift is updating the job or false if not
+   */
+  public static boolean isOpenShiftUpdatingJob() {
+    return openshiftUpdatingJob.get();
+  }
 
   public BuildConfigWatcher(String defaultNamespace) {
     this.defaultNamespace = defaultNamespace;
   }
+
 
   @Override
   public void onClose(KubernetesClientException e) {
@@ -95,38 +112,43 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private void upsertJob(BuildConfig buildConfig) throws IOException {
     if (isJenkinsBuildConfig(buildConfig)) {
       synchronized (buildConfigVersions) {
-        NamespaceName namespacedName = NamespaceName.create(buildConfig);
-        Long resourceVersion = getResourceVersion(buildConfig);
-        Long previousResourceVersion = buildConfigVersions.get(namespacedName);
+        openshiftUpdatingJob.set(true);
+        try {
+          NamespaceName namespacedName = NamespaceName.create(buildConfig);
+          Long resourceVersion = getResourceVersion(buildConfig);
+          Long previousResourceVersion = buildConfigVersions.get(namespacedName);
 
-        // lets only process this BuildConfig if the resourceVersion is newer than the last one we processed
-        if (previousResourceVersion == null || (resourceVersion != null && resourceVersion > previousResourceVersion)) {
-          buildConfigVersions.put(namespacedName, resourceVersion);
+          // lets only process this BuildConfig if the resourceVersion is newer than the last one we processed
+          if (previousResourceVersion == null || (resourceVersion != null && resourceVersion > previousResourceVersion)) {
+            buildConfigVersions.put(namespacedName, resourceVersion);
 
-          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
-          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
-          if (jobFromBuildConfig == null) {
-            return;
-          }
+            String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
+            Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
+            if (jobFromBuildConfig == null) {
+              return;
+            }
 
-          InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+            InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
 
-          Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
-          if (job == null) {
-            Jenkins.getInstance().createProjectFromXML(
-              jobName,
-              jobStream
-            );
-            logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+            Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
+            if (job == null) {
+              Jenkins.getInstance().createProjectFromXML(
+                jobName,
+                jobStream
+              );
+              logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+            } else {
+              Source source = new StreamSource(jobStream);
+              job.updateByXml(source);
+              job.save();
+              logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+            }
           } else {
-            Source source = new StreamSource(jobStream);
-            job.updateByXml(source);
-            job.save();
-            logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+            logger.info("Ignored out of order notification for BuildConfig " + namespacedName
+              + " with resourceVersion " + resourceVersion + " when we have already processed " + previousResourceVersion);
           }
-        } else {
-          logger.info("Ignored out of order notification for BuildConfig " + namespacedName
-            + " with resourceVersion " + resourceVersion + " when we have already processed " + previousResourceVersion);
+        } finally {
+          openshiftUpdatingJob.set(false);
         }
       }
     }
