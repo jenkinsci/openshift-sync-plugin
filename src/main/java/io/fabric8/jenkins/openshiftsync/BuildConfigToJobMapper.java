@@ -54,11 +54,13 @@ public class BuildConfigToJobMapper {
     String jenkinsfilePath = null;
     if (spec != null) {
       source = spec.getSource();
+      if (source != null) {
+        jenkinsfile = source.getJenkinsfile();
+      }
       BuildStrategy strategy = spec.getStrategy();
       if (strategy != null) {
         JenkinsPipelineBuildStrategy jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
         if (jenkinsPipelineStrategy != null) {
-          jenkinsfile = jenkinsPipelineStrategy.getJenkinsfile();
           jenkinsfilePath = jenkinsPipelineStrategy.getJenkinsfilePath();
         }
       }
@@ -100,54 +102,60 @@ public class BuildConfigToJobMapper {
         jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
       }
     }
+
     if (jenkinsPipelineStrategy == null) {
       LOGGER.warning("No jenkinsPipelineStrategy available in the BuildConfig " + namespaceName);
-    } else {
-      FlowDefinition definition = job.getDefinition();
-      if (definition instanceof CpsScmFlowDefinition) {
-        CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
-        String scriptPath = cpsScmFlowDefinition.getScriptPath();
-        if (scriptPath != null && scriptPath.trim().length() > 0) {
-          jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
+      return false;
+    }
 
-          SCM scm = cpsScmFlowDefinition.getScm();
-          if (scm instanceof GitSCM) {
-            GitSCM gitSCM = (GitSCM) scm;
-            List<RemoteConfig> repositories = gitSCM.getRepositories();
-            if (repositories != null && repositories.size() > 0) {
-              RemoteConfig remoteConfig = repositories.get(0);
-              List<URIish> urIs = remoteConfig.getURIs();
-              if (urIs != null && urIs.size() > 0) {
-                URIish urIish = urIs.get(0);
-                String gitUrl = urIish.toString();
-                if (gitUrl != null && gitUrl.length() > 0) {
-                  List<BranchSpec> branches = gitSCM.getBranches();
-                  if (branches != null && branches.size() > 0) {
-                    BranchSpec branchSpec = branches.get(0);
-                    String branch = branchSpec.getName();
-                    while (branch.startsWith("*") || branch.startsWith("/")) {
-                      branch = branch.substring(1);
-                    }
+    FlowDefinition definition = job.getDefinition();
+    if (definition instanceof CpsScmFlowDefinition) {
+      CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
+      String scriptPath = cpsScmFlowDefinition.getScriptPath();
+      if (scriptPath != null && scriptPath.trim().length() > 0) {
+        jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
+
+        SCM scm = cpsScmFlowDefinition.getScm();
+        if (scm instanceof GitSCM) {
+          GitSCM gitSCM = (GitSCM) scm;
+          List<RemoteConfig> repositories = gitSCM.getRepositories();
+          if (repositories != null && repositories.size() > 0) {
+            RemoteConfig remoteConfig = repositories.get(0);
+            List<URIish> urIs = remoteConfig.getURIs();
+            if (urIs != null && urIs.size() > 0) {
+              URIish urIish = urIs.get(0);
+              String gitUrl = urIish.toString();
+              if (gitUrl != null && gitUrl.length() > 0) {
+                List<BranchSpec> branches = gitSCM.getBranches();
+                if (branches != null && branches.size() > 0) {
+                  BranchSpec branchSpec = branches.get(0);
+                  String branch = branchSpec.getName();
+                  while (branch.startsWith("*") || branch.startsWith("/")) {
+                    branch = branch.substring(1);
                   }
-                  String ref = null;
-                  OpenShiftUtils.updateGitSourceUrl(buildConfig, gitUrl, ref);
                 }
+                String ref = null;
+                OpenShiftUtils.updateGitSourceUrl(buildConfig, gitUrl, ref);
               }
             }
           }
-          return true;
         }
-      } else if (definition instanceof CpsFlowDefinition) {
-        CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
-        String jenkinsfile = cpsFlowDefinition.getScript();
-        if (jenkinsfile != null && jenkinsfile.trim().length() > 0) {
-          jenkinsPipelineStrategy.setJenkinsfile(jenkinsfile);
-          return true;
-        }
-      } else {
-        LOGGER.warning("Cannot update BuildConfig " + namespaceName + " as the definition is of class " + (definition == null ? "null" : definition.getClass().getName()));
+        return true;
       }
+      return false;
     }
+
+    if (definition instanceof CpsFlowDefinition) {
+      CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
+      String jenkinsfile = cpsFlowDefinition.getScript();
+      if (jenkinsfile != null && jenkinsfile.trim().length() > 0) {
+        OpenShiftUtils.updateJenkinsfileSource(buildConfig, jenkinsfile);
+        return true;
+      }
+      return false;
+    }
+
+    LOGGER.warning("Cannot update BuildConfig " + namespaceName + " as the definition is of class " + (definition == null ? "null" : definition.getClass().getName()));
     return false;
   }
 }
