@@ -303,6 +303,7 @@ public class OpenShiftUtils {
       source = new BuildSource();
       spec.setSource(source);
     }
+    source.setType("Git");
     GitBuildSource gitSource = source.getGit();
     if (gitSource == null) {
       gitSource = new GitBuildSource();
@@ -310,25 +311,6 @@ public class OpenShiftUtils {
     }
     gitSource.setUri(gitUrl);
     gitSource.setRef(ref);
-  }
-
-  /**
-   * Lazily creates the GitSource if need be then updates the git URL
-   *  @param buildConfig the BuildConfig to update
-   * @param jenkinsfile the jenkinsfile pipeline definition
-   */
-  public static void updateJenkinsfileSource(BuildConfig buildConfig, String jenkinsfile) {
-    BuildConfigSpec spec = buildConfig.getSpec();
-    if (spec == null) {
-      spec = new BuildConfigSpec();
-      buildConfig.setSpec(spec);
-    }
-    BuildSource source = spec.getSource();
-    if (source == null) {
-      source = new BuildSource();
-      spec.setSource(source);
-    }
-    source.setJenkinsfile(jenkinsfile);
   }
 
   /**
