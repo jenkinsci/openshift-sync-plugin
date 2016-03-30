@@ -54,13 +54,11 @@ public class BuildConfigToJobMapper {
     String jenkinsfilePath = null;
     if (spec != null) {
       source = spec.getSource();
-      if (source != null) {
-        jenkinsfile = source.getJenkinsfile();
-      }
       BuildStrategy strategy = spec.getStrategy();
       if (strategy != null) {
         JenkinsPipelineBuildStrategy jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
         if (jenkinsPipelineStrategy != null) {
+          jenkinsfile = jenkinsPipelineStrategy.getJenkinsfile();
           jenkinsfilePath = jenkinsPipelineStrategy.getJenkinsfilePath();
         }
       }
@@ -149,7 +147,7 @@ public class BuildConfigToJobMapper {
       CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
       String jenkinsfile = cpsFlowDefinition.getScript();
       if (jenkinsfile != null && jenkinsfile.trim().length() > 0) {
-        OpenShiftUtils.updateJenkinsfileSource(buildConfig, jenkinsfile);
+        jenkinsPipelineStrategy.setJenkinsfile(jenkinsfile);
         return true;
       }
       return false;
