@@ -22,15 +22,19 @@ metadata:
   name: edam
 spec:
   source:
-    jenkinsfile: |
-      node {
-         stage 'Stage 1'
-         sleep 10
-         echo 'Hello World 1'
-         stage 'Stage 2'
-         sleep 10
-         echo 'Hello World 2'
-      }
+    git:
+      uri: http://gogs.vagrant.f8/gogsadmin/mydemo.git
+    secrets: []
+    type: Git
   strategy:
     type: JenkinsPipeline
-    jenkinsPipelineStrategy: {}
+    jenkinsPipelineStrategy:
+      jenkinsfile: |
+        node {
+           stage 'Stage 1'
+           sleep 10
+           echo 'Hello World 1'
+           stage 'Stage 2'
+           sleep 10
+           echo 'Hello World 2'
+        }
