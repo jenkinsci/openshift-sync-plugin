@@ -25,6 +25,7 @@ import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
 import jenkins.model.GlobalConfiguration;
+import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -160,6 +161,20 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
         Runnable task = new Runnable() {
           @Override
           public void run() {
+            logger.info("Waiting for Jenkins to be started");
+            while (true) {
+              Jenkins jenkins = Jenkins.getInstance();
+              if (jenkins != null) {
+                if (jenkins.isAcceptingTasks()) {
+                  break;
+                }
+              }
+              try {
+                Thread.sleep(500);
+              } catch (InterruptedException e) {
+                // ignore
+              }
+            }
             logger.info("loading initial BuildConfigs resources");
 
             try {
@@ -176,7 +191,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
             }
           }
         };
-        Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
+        // lets give jenkins a while to get started ;)
+        Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
       }
     }
   }

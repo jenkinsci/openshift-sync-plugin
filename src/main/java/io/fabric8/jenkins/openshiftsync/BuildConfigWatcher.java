@@ -17,6 +17,7 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
+import hudson.model.TopLevelItem;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
@@ -141,23 +142,12 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
                   jobName,
                   jobStream
                 );
-                job = jenkins.getItem(jobName, jenkins, Job.class);
                 logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
               } else {
                 Source source = new StreamSource(jobStream);
                 job.updateByXml(source);
                 job.save();
                 logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
-              }
-              try {
-                if (job != null) {
-                  job.doReload();
-                } else {
-                  jenkins.reload();
-                }
-                logger.info("Reloaded job configuration!");
-              } catch (Exception e) {
-                logger.log(Level.SEVERE, "Failed to reload jenkins job after upserting " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
               }
             }
           } else {
