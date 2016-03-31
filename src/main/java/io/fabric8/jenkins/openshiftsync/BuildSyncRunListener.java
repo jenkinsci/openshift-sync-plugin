@@ -110,6 +110,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
       if (urlsToPoll.add(url)) {
         logger.info("starting polling build " + url);
       }
+    } else {
+      logger.fine("not polling polling build " + url + " as its not a WorkflowJob");
     }
     super.onStarted(run, listener);
   }
@@ -287,7 +289,42 @@ public class BuildSyncRunListener extends RunListener<Run> {
         logger.warning("Could not find Jenkins Job Run for " + jobAndBuildName);
       }
     }
+    if (run != null) {
+      if (!run.hasntStartedYet()) {
+        if (run.isBuilding()) {
+          phase = BuildPhases.RUNNING;
+        } else {
+          Result result = run.getResult();
+          if (result != null) {
+            if (result.equals(Result.SUCCESS)) {
+              phase = BuildPhases.COMPLETE;
+            } else if (result.equals(Result.ABORTED)) {
+              phase = BuildPhases.CANCELLED;
+            } else if (result.equals(Result.FAILURE)) {
+              phase = BuildPhases.FAILED;
+            } else if (result.equals(Result.UNSTABLE)) {
+              phase = BuildPhases.FAILED;
+            } else {
+              phase = BuildPhases.PENDING;
+            }
+          }
+        }
+      }
+    }
 
+    BuildStatus status = found.getStatus();
+    boolean buildAlreadyComplete = false;
+    if (status != null) {
+      String oldPhase = status.getPhase();
+      switch (oldPhase) {
+        case BuildPhases.NEW:
+        case BuildPhases.PENDING:
+        case BuildPhases.RUNNING:
+          break;
+        default:
+          buildAlreadyComplete = true;
+      }
+    }
     BuildStatus status = updateBuildStatus(found.getStatus(), run);
     found.setStatus(status);
 
@@ -300,6 +337,12 @@ public class BuildSyncRunListener extends RunListener<Run> {
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).create(found);
     } else {
       logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase());
+      // lets not update the status again as already completed and doing so barfs
+      // with error: "phase cannot be updated from a terminal state"
+      if (buildAlreadyComplete) {
+        found.setStatus(null);
+      }
+      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).replace(found);
     }
   }
