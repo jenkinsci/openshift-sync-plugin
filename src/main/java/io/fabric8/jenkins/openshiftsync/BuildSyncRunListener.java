@@ -289,28 +289,6 @@ public class BuildSyncRunListener extends RunListener<Run> {
         logger.warning("Could not find Jenkins Job Run for " + jobAndBuildName);
       }
     }
-    if (run != null) {
-      if (!run.hasntStartedYet()) {
-        if (run.isBuilding()) {
-          phase = BuildPhases.RUNNING;
-        } else {
-          Result result = run.getResult();
-          if (result != null) {
-            if (result.equals(Result.SUCCESS)) {
-              phase = BuildPhases.COMPLETE;
-            } else if (result.equals(Result.ABORTED)) {
-              phase = BuildPhases.CANCELLED;
-            } else if (result.equals(Result.FAILURE)) {
-              phase = BuildPhases.FAILED;
-            } else if (result.equals(Result.UNSTABLE)) {
-              phase = BuildPhases.FAILED;
-            } else {
-              phase = BuildPhases.PENDING;
-            }
-          }
-        }
-      }
-    }
 
     BuildStatus status = found.getStatus();
     boolean buildAlreadyComplete = false;
@@ -325,7 +303,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
           buildAlreadyComplete = true;
       }
     }
-    BuildStatus status = updateBuildStatus(found.getStatus(), run);
+    status = updateBuildStatus(found.getStatus(), run);
     found.setStatus(status);
 
     if (logger.isLoggable(Level.FINE)) {
@@ -336,13 +314,12 @@ public class BuildSyncRunListener extends RunListener<Run> {
       logger.info("creating build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase());
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).create(found);
     } else {
-      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase());
       // lets not update the status again as already completed and doing so barfs
       // with error: "phase cannot be updated from a terminal state"
       if (buildAlreadyComplete) {
         found.setStatus(null);
       }
-      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
+      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase());
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).replace(found);
     }
   }
