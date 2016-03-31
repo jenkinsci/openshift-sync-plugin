@@ -130,18 +130,34 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
             InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
 
-            Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
-            if (job == null) {
-              Jenkins.getInstance().createProjectFromXML(
-                jobName,
-                jobStream
-              );
-              logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+            Jenkins jenkins = Jenkins.getInstance();
+            if (jenkins == null) {
+              logger.warning("No jenkins instance so cannot upsert job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
             } else {
-              Source source = new StreamSource(jobStream);
-              job.updateByXml(source);
-              job.save();
-              logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+              Job job = jenkins.getItem(jobName, jenkins, Job.class);
+              if (job == null) {
+                jenkins.createProjectFromXML(
+                  jobName,
+                  jobStream
+                );
+                job = jenkins.getItem(jobName, jenkins, Job.class);
+                logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+              } else {
+                Source source = new StreamSource(jobStream);
+                job.updateByXml(source);
+                job.save();
+                logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+              }
+              try {
+                if (job != null) {
+                  job.doReload();
+                } else {
+                  jenkins.reload();
+                }
+                logger.info("Reloaded job configuration!");
+              } catch (Exception e) {
+                logger.log(Level.SEVERE, "Failed to reload jenkins job after upserting " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
+              }
             }
           } else {
             logger.info("Ignored out of order notification for BuildConfig " + namespacedName
