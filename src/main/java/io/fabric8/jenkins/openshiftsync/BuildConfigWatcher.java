@@ -26,6 +26,7 @@ import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigList;
 import jenkins.model.Jenkins;
 import org.apache.tools.ant.filters.StringInputStream;
+import org.jvnet.hudson.reactor.ReactorException;
 
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
@@ -190,6 +191,11 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
       if (job != null) {
         job.delete();
+        try {
+          Jenkins.getInstance().reload();
+        } catch (ReactorException e) {
+          logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + jobName + " from BuildConfig " + namespaceName);
+        }
       }
       buildConfigVersions.remove(namespaceName);
     }
