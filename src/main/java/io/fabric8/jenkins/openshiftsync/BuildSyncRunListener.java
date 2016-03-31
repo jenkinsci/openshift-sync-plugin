@@ -32,9 +32,13 @@ import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.BuildSpec;
 import io.fabric8.openshift.api.model.BuildStatus;
+import io.fabric8.openshift.api.model.BuildStatusBuilder;
 import io.fabric8.openshift.client.OpenShiftClient;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.ISODateTimeFormat;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
@@ -64,6 +68,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   @XStreamOmitField
   private final Logger logger = Logger.getLogger(getClass().getName());
+
+  @XStreamOmitField
+  private final DateTimeFormatter dateFormatter = ISODateTimeFormat.dateTime();
 
   private long pollPeriodMs = 2000;
   private String server;
@@ -264,52 +271,25 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
     String name = metadata.getName();
 
-    String phase = BuildPhases.NEW;
     if (run == null) {
       run = JenkinsUtils.getRun(jobAndBuildName);
       if (run == null) {
         logger.warning("Could not find Jenkins Job Run for " + jobAndBuildName);
       }
     }
-    if (run != null) {
-      if (!run.hasntStartedYet()) {
-        if (run.isBuilding()) {
-          phase = BuildPhases.RUNNING;
-        } else {
-          Result result = run.getResult();
-          if (result != null) {
-            if (result.equals(Result.SUCCESS)) {
-              phase = BuildPhases.COMPLETE;
-            } else if (result.equals(Result.ABORTED)) {
-              phase = BuildPhases.CANCELLED;
-            } else if (result.equals(Result.FAILURE)) {
-              phase = BuildPhases.FAILED;
-            } else if (result.equals(Result.UNSTABLE)) {
-              phase = BuildPhases.FAILED;
-            } else {
-              phase = BuildPhases.PENDING;
-            }
-          }
-        }
-      }
-    }
 
-    BuildStatus status = found.getStatus();
-    if (status == null) {
-      status = new BuildStatus();
-    }
-    status.setPhase(phase);
+    BuildStatus status = updateBuildStatus(found.getStatus(), run);
     found.setStatus(status);
 
     if (logger.isLoggable(Level.FINE)) {
-      logger.fine("generated build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase + " data: " + found);
+      logger.fine("generated build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase() + " data: " + found);
     }
 
     if (create) {
-      logger.info("creating build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
+      logger.info("creating build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase());
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).create(found);
     } else {
-      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
+      logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + found.getStatus().getPhase());
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).replace(found);
     }
   }
@@ -328,6 +308,54 @@ public class BuildSyncRunListener extends RunListener<Run> {
       answer.setStrategy(spec.getStrategy());
     }
     return answer;
+  }
+
+  private BuildStatus updateBuildStatus(BuildStatus buildStatus, Run run) {
+    BuildStatusBuilder builder;
+    if (buildStatus != null) {
+      builder = new BuildStatusBuilder(buildStatus);
+    } else {
+      builder = new BuildStatusBuilder();
+    }
+
+    if (run != null) {
+      builder.withPhase(runToBuildPhase(run));
+      long startTime = run.getStartTimeInMillis();
+      if (startTime > 0) {
+        DateTime dateTime = new DateTime(startTime);
+        builder.withStartTimestamp(dateFormatter.print(dateTime));
+      }
+      long duration = run.getDuration();
+      if (duration > 0) {
+        DateTime dateTime = new DateTime(startTime + duration);
+        builder.withCompletionTimestamp(dateFormatter.print(dateTime));
+      }
+    }
+    return builder.build();
+  }
+
+  private String runToBuildPhase(Run run) {
+    if (run != null && !run.hasntStartedYet()) {
+      if (run.isBuilding()) {
+        return BuildPhases.RUNNING;
+      } else {
+        Result result = run.getResult();
+        if (result != null) {
+          if (result.equals(Result.SUCCESS)) {
+            return BuildPhases.COMPLETE;
+          } else if (result.equals(Result.ABORTED)) {
+            return BuildPhases.CANCELLED;
+          } else if (result.equals(Result.FAILURE)) {
+            return BuildPhases.FAILED;
+          } else if (result.equals(Result.UNSTABLE)) {
+            return BuildPhases.FAILED;
+          } else {
+            return BuildPhases.PENDING;
+          }
+        }
+      }
+    }
+    return BuildPhases.NEW;
   }
 
   /**
