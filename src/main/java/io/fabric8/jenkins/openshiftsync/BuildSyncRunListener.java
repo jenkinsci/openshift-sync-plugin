@@ -25,6 +25,7 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.listeners.RunListener;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
@@ -230,6 +231,15 @@ public class BuildSyncRunListener extends RunListener<Run> {
         logger.warning("No BuildConfig for namespace " + defaultNamespace + " buildName + " + buildConfigName);
         return;
       }
+
+      try {
+        buildConfig.getStatus().setLastVersion(buildConfig.getStatus().getLastVersion() + 1);
+        openShiftClient.buildConfigs().inNamespace(defaultNamespace).withName(buildConfigName).replace(buildConfig);
+      } catch (Exception e) {
+        logger.log(Level.WARNING, "Failed to find BuildConfig for namespace " + defaultNamespace + " buildName + " + buildConfigName + ". " + e, e);
+        return;
+      }
+
       BuildSpec buildSpec = createBuildSpec(buildConfig);
       found = new BuildBuilder().
         withNewMetadata().
