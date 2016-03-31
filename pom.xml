@@ -187,6 +187,7 @@
             <exclude>.editorconfig</exclude>
             <exclude>LICENSE</exclude>
             <exclude>work/**</exclude>
+            <exclude>*.sh</exclude>
           </excludes>
           <mapping>
             <jelly>XML_STYLE</jelly>
