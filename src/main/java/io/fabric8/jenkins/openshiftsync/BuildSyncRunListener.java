@@ -31,6 +31,7 @@ import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.BuildSpec;
+import io.fabric8.openshift.api.model.BuildStatus;
 import io.fabric8.openshift.client.OpenShiftClient;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -292,16 +293,13 @@ public class BuildSyncRunListener extends RunListener<Run> {
         }
       }
     }
-/*
-    // TODO looks like we cannot update the status phase as OpenShift barfs
 
     BuildStatus status = found.getStatus();
     if (status == null) {
       status = new BuildStatus();
     }
     status.setPhase(phase);
-*/
-    annotations.put(Constants.ANNOTATION_PHASE, phase);
+    found.setStatus(status);
 
     if (logger.isLoggable(Level.FINE)) {
       logger.fine("generated build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase + " data: " + found);
@@ -311,8 +309,6 @@ public class BuildSyncRunListener extends RunListener<Run> {
       logger.info("creating build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).create(found);
     } else {
-      // lets clear the status as it fails if we try to update it!
-      //found.setStatus(null);
       logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + phase);
       openShiftClient.builds().inNamespace(defaultNamespace).withName(name).replace(found);
     }
