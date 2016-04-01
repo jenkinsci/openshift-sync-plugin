@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
 <!--
 
     Copyright (C) 2016 Red Hat, Inc.
@@ -15,15 +16,16 @@
     limitations under the License.
 
 -->
-<arquillian xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-            xmlns="http://jboss.org/schema/arquillian"
-            xsi:schemaLocation="http://jboss.org/schema/arquillian
-               http://jboss.org/schema/arquillian/arquillian_1_0.xsd">
-
-  <extension qualifier="kubernetes">
-    <property name="env.dependencies">mvn:io.fabric8.devops.apps/jenkins/${fabric8.devops.version}/json/kubernetes</property>
-<!--
-    <property name="useGoFabric8">true</property>
--->
-  </extension>
-</arquillian>
+<additionalHeaders>
+  <groovy_style>
+    "/**", " * ", " */", "", null, "(\\s|\\t)*/\\*.*$", ".*\\*/(\\s|\\t)*$", false, true, false
+    <firstLine>/**</firstLine>
+    <beforeEachLine> * </beforeEachLine>
+    <endLine> */</endLine>
+    <skipLine>#.*$</skipLine>
+    <firstLineDetectionPattern>(\s|\t)*/\*.*$", ".*\*/(\s|\t)*$</firstLineDetectionPattern>
+    <lastLineDetectionPattern>false</lastLineDetectionPattern>
+    <allowBlankLines>true</allowBlankLines>
+    <isMultiline>false</isMultiline>
+  </groovy_style>
+</additionalHeaders>

@@ -1,5 +1,4 @@
 #!/usr/bin/env groovy
-
 /**
  * Copyright (C) 2016 Red Hat, Inc.
  *
@@ -15,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 def updateDependencies(source){
 
   def properties = []
