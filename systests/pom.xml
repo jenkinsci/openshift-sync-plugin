@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (C) 2016 Red Hat, Inc.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+            http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+      <groupId>org.sonatype.oss</groupId>
+      <artifactId>oss-parent</artifactId>
+      <version>9</version>
+  </parent>
+
+  <groupId>io.fabric8.systests</groupId>
+  <artifactId>openshift-jenkins-sync-plugin-systests</artifactId>
+  <version>0.1-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <properties>
+<!--
+    <fabric8.version>2.2.102-SNAPSHOT</fabric8.version>
+-->
+    <fabric8.version>2.2.100</fabric8.version>
+    <fabric8.devops.version>2.2.146</fabric8.devops.version>
+  </properties>
+
+  <name>OpenShift Jenkins Sync Plugin :: System Tests</name>
+  <description>Syncs OpenShift BuildConfigs with Jenkins jobs</description>
+  <url>http://fabric8.io</url>
+  <inceptionYear>2016</inceptionYear>
+
+  <organization>
+    <name>Red Hat</name>
+    <url>http://redhat.com</url>
+  </organization>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>geeks</id>
+      <name>Fabric8 Development Team</name>
+      <organization>fabric8</organization>
+      <organizationUrl>http://fabric8.io/</organizationUrl>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:git@github.com:fabric8io/${project.artifactId}.git</connection>
+    <developerConnection>scm:git:git@github.com:fabric8io/${project.artifactId}.git</developerConnection>
+    <url>http://github.com/fabric8io/${project.artifactId}/</url>
+    <tag>${project.version}</tag>
+  </scm>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.fabric8</groupId>
+        <artifactId>fabric8-project-bom-with-platform-deps</artifactId>
+        <version>${fabric8.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+
+
+    <!-- system tests -->
+    <dependency>
+      <groupId>org.jboss.arquillian.junit</groupId>
+      <artifactId>arquillian-junit-container</artifactId>
+      <version>1.1.11.Final</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>fabric8-arquillian</artifactId>
+      <version>${fabric8.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.12</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <testResources>
+      <testResource>
+        <directory>src/test/resources</directory>
+        <filtering>true</filtering>
+      </testResource>
+    </testResources>
+
+    <plugins>
+<!--
+      <plugin>
+        <groupId>com.mycila</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <version>2.11</version>
+        <configuration>
+          <aggregate>true</aggregate>
+          <header>header.txt</header>
+          <properties>
+            <owner>Red Hat, Inc.</owner>
+          </properties>
+          <excludes>
+            <exclude>.editorconfig</exclude>
+            <exclude>LICENSE</exclude>
+            <exclude>work/**</exclude>
+            <exclude>*.sh</exclude>
+          </excludes>
+          <mapping>
+            <jelly>XML_STYLE</jelly>
+          </mapping>
+        </configuration>
+      </plugin>
+-->
+
+      <!-- system tests -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>2.18.1</version>
+<!--
+        <inherited>true</inherited>
+-->
+        <configuration>
+          <forkMode>never</forkMode>
+          <includes>
+            <include>**/*SysTest.java</include>
+          </includes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
