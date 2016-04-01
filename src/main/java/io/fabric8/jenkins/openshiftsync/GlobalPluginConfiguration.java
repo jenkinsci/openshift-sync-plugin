@@ -122,6 +122,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       if (buildConfigWatch != null) {
         buildConfigWatch.close();
       }
+      if (buildWatch != null) {
+        buildWatch.close();
+      }
       if (openShiftClient != null) {
         openShiftClient.close();
         openShiftClient = null;
