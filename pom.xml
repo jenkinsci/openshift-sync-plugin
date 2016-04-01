@@ -184,13 +184,17 @@
             <owner>Red Hat, Inc.</owner>
           </properties>
           <excludes>
-            <exclude>.editorconfig</exclude>
             <exclude>LICENSE</exclude>
             <exclude>work/**</exclude>
-            <exclude>*.sh</exclude>
           </excludes>
+          <headerDefinitions>
+            <headerDefinition>license-headers-config.xml</headerDefinition>
+          </headerDefinitions>
           <mapping>
             <jelly>XML_STYLE</jelly>
+            <editorconfig>SEMICOLON_STYLE</editorconfig>
+            <groovy>GROOVY_STYLE</groovy>
+            <Jenkinsfile>GROOVY_STYLE</Jenkinsfile>
           </mapping>
         </configuration>
       </plugin>
