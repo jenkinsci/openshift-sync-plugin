@@ -221,7 +221,6 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-enforcer-plugin</artifactId>
-            <version>${maven.enforcer.plugin.version}</version>
             <executions>
               <execution>
                 <id>enforce-no-snapshots</id>
