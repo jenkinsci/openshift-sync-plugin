@@ -145,58 +145,56 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       final BuildConfigList buildConfigs;
       final BuildList builds;
       if (namespace != null && !namespace.isEmpty()) {
-        buildConfigWatch = openShiftClient.buildConfigs().inNamespace(namespace).watch(buildConfigWatcher);
-        buildWatch = openShiftClient.builds().inNamespace(namespace).watch(buildWatcher);
         buildConfigs = openShiftClient.buildConfigs().inNamespace(namespace).list();
         builds = openShiftClient.builds().inNamespace(namespace).list();
+        buildConfigWatch = openShiftClient.buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
+        buildWatch = openShiftClient.builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
       } else {
-        buildConfigWatch = openShiftClient.buildConfigs().inAnyNamespace().watch(buildConfigWatcher);
-        buildWatch = openShiftClient.builds().inAnyNamespace().watch(buildWatcher);
         buildConfigs = openShiftClient.buildConfigs().inAnyNamespace().list();
         builds = openShiftClient.builds().inAnyNamespace().list();
+        buildConfigWatch = openShiftClient.buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
+        buildWatch = openShiftClient.builds().inAnyNamespace().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
       }
 
       // lets process the initial state
       logger.info("Now handling startup build configs!!");
-      if (buildConfigs != null) {
-        // lets do this in a background thread to avoid errors like:
-        //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
-        Runnable task = new Runnable() {
-          @Override
-          public void run() {
-            logger.info("Waiting for Jenkins to be started");
-            while (true) {
-              Jenkins jenkins = Jenkins.getInstance();
-              if (jenkins != null) {
-                if (jenkins.isAcceptingTasks()) {
-                  break;
-                }
-              }
-              try {
-                Thread.sleep(500);
-              } catch (InterruptedException e) {
-                // ignore
+      // lets do this in a background thread to avoid errors like:
+      //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
+      Runnable task = new Runnable() {
+        @Override
+        public void run() {
+          logger.info("Waiting for Jenkins to be started");
+          while (true) {
+            Jenkins jenkins = Jenkins.getInstance();
+            if (jenkins != null) {
+              if (jenkins.isAcceptingTasks()) {
+                break;
               }
             }
-            logger.info("loading initial BuildConfigs resources");
-
             try {
-              buildConfigWatcher.onInitialBuildConfigs(buildConfigs);
-              logger.info("loaded initial BuildConfigs resources");
-            } catch (Exception e) {
-              logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
-            }
-            try {
-              buildWatcher.onInitialBuilds(builds);
-              logger.info("loaded initial Builds resources");
-            } catch (Exception e) {
-              logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
+              Thread.sleep(500);
+            } catch (InterruptedException e) {
+              // ignore
             }
           }
-        };
-        // lets give jenkins a while to get started ;)
-        Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
-      }
+          logger.info("loading initial BuildConfigs resources");
+
+          try {
+            buildConfigWatcher.onInitialBuildConfigs(buildConfigs);
+            logger.info("loaded initial BuildConfigs resources");
+          } catch (Exception e) {
+            logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
+          }
+          try {
+            buildWatcher.onInitialBuilds(builds);
+            logger.info("loaded initial Builds resources");
+          } catch (Exception e) {
+            logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
+          }
+        }
+      };
+      // lets give jenkins a while to get started ;)
+      Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
     }
   }
 
