@@ -17,10 +17,7 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
-import hudson.model.TopLevelItem;
 import hudson.util.XStream2;
-import io.fabric8.kubernetes.api.model.HasMetadata;
-import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
@@ -33,41 +30,25 @@ import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
 
 /**
  * Watches {@link BuildConfig} objects in OpenShift and for WorkflowJobs we ensure there is a
  * suitable Jenkins Job object defined with the correct configuration
  */
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
-  private static final AtomicBoolean openshiftUpdatingJob = new AtomicBoolean(false);
-  private static final Map<NamespaceName, Long> buildConfigVersions = new HashMap<>();
-
   private final Logger logger = Logger.getLogger(getClass().getName());
   private final String defaultNamespace;
-
-  /**
-   * Determines if an update to a Job comes from OpenShift via a {@link BuildConfig} change or
-   * via Jenkins itself (REST API, web console etc)
-   *
-   * @return true if OpenShift is updating the job or false if not
-   */
-  public static boolean isOpenShiftUpdatingJob() {
-    return openshiftUpdatingJob.get();
-  }
 
   public BuildConfigWatcher(String defaultNamespace) {
     this.defaultNamespace = defaultNamespace;
   }
-
 
   @Override
   public void onClose(KubernetesClientException e) {
@@ -113,50 +94,37 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void upsertJob(BuildConfig buildConfig) throws IOException {
     if (isJenkinsBuildConfig(buildConfig)) {
-      synchronized (buildConfigVersions) {
-        openshiftUpdatingJob.set(true);
-        try {
-          NamespaceName namespacedName = NamespaceName.create(buildConfig);
-          Long resourceVersion = getResourceVersion(buildConfig);
-          Long previousResourceVersion = buildConfigVersions.get(namespacedName);
+      String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
+      Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
+      if (jobFromBuildConfig == null) {
+        return;
+      }
 
-          // lets only process this BuildConfig if the resourceVersion is newer than the last one we processed
-          if (previousResourceVersion == null || (resourceVersion != null && resourceVersion > previousResourceVersion)) {
-            buildConfigVersions.put(namespacedName, resourceVersion);
+      jobFromBuildConfig.addProperty(new BuildConfigProjectProperty(buildConfig));
 
-            String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
-            Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
-            if (jobFromBuildConfig == null) {
-              return;
-            }
+      InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
 
-            InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
-
-            Jenkins jenkins = Jenkins.getInstance();
-            if (jenkins == null) {
-              logger.warning("No jenkins instance so cannot upsert job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
-            } else {
-              Job job = jenkins.getItem(jobName, jenkins, Job.class);
-              if (job == null) {
-                jenkins.createProjectFromXML(
-                  jobName,
-                  jobStream
-                );
-                logger.info("Created job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
-              } else {
-                Source source = new StreamSource(jobStream);
-                job.updateByXml(source);
-                job.save();
-                logger.info("Updated job " + jobName + " from BuildConfig " + namespacedName + " with revision: " + resourceVersion);
-              }
-            }
-          } else {
-            logger.info("Ignored out of order notification for BuildConfig " + namespacedName
-              + " with resourceVersion " + resourceVersion + " when we have already processed " + previousResourceVersion);
+      Jenkins jenkins = Jenkins.getInstance();
+      Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+      if (job == null) {
+        jenkins.createProjectFromXML(
+          jobName,
+          jobStream
+        );
+        logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
+      } else {
+        BuildConfigProjectProperty buildConfigProjectProperty = (BuildConfigProjectProperty) job.getProperty(BuildConfigProjectProperty.class);
+        if (buildConfigProjectProperty != null) {
+          long updatedBCResourceVersion = parseResourceVersion(buildConfig);
+          long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getBuildConfig());
+          if (oldBCResourceVersion > updatedBCResourceVersion) {
+            return;
           }
-        } finally {
-          openshiftUpdatingJob.set(false);
         }
+        Source source = new StreamSource(jobStream);
+        job.updateByXml(source);
+        job.save();
+        logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
       }
     }
   }
@@ -174,30 +142,14 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
-    String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
-    NamespaceName namespaceName = NamespaceName.create(buildConfig);
-
-    synchronized (buildConfigVersions) {
-      Job job = Jenkins.getInstance().getItem(jobName, Jenkins.getInstance(), Job.class);
-      if (job != null) {
-        job.delete();
-        try {
-          Jenkins.getInstance().reload();
-        } catch (ReactorException e) {
-          logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + jobName + " from BuildConfig " + namespaceName);
-        }
+    Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+    if (job != null) {
+      job.delete();
+      try {
+        Jenkins.getInstance().reload();
+      } catch (ReactorException e) {
+        logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + job.getName() + " from BuildConfig " + NamespaceName.create(buildConfig));
       }
-      buildConfigVersions.remove(namespaceName);
     }
-  }
-
-  public static Long getResourceVersion(HasMetadata hasMetadata) {
-    ObjectMeta metadata = hasMetadata.getMetadata();
-    String resourceVersionText = metadata.getResourceVersion();
-    Long resourceVersion = null;
-    if (resourceVersionText != null && resourceVersionText.length() > 0) {
-      resourceVersion = Long.parseLong(resourceVersionText);
-    }
-    return resourceVersion;
   }
 }

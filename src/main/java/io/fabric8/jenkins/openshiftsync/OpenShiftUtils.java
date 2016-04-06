@@ -15,12 +15,17 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
-import hudson.model.Job;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.api.model.ReplicationController;
+import io.fabric8.kubernetes.api.model.ReplicationControllerStatus;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServiceSpec;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
@@ -30,31 +35,46 @@ import io.fabric8.openshift.api.model.RouteSpec;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
+import org.apache.commons.lang.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
 
 /**
  */
 public class OpenShiftUtils {
   private final static Logger logger = Logger.getLogger(OpenShiftUtils.class.getName());
 
+  private static OpenShiftClient openShiftClient;
+
   /**
-   * Creates an {@link OpenShiftClient}
+   * Initializes an {@link OpenShiftClient}
    *
-   * @return a newly created client for OpenShift from the given optional server URL
    * @param serverUrl the optional URL of where the OpenShift cluster API server is running
    */
-  public static OpenShiftClient createOpenShiftClient(String serverUrl) {
+  public synchronized static void initializeOpenShiftClient(String serverUrl) {
     OpenShiftConfigBuilder configBuilder = new OpenShiftConfigBuilder();
     if (serverUrl != null && !serverUrl.isEmpty()) {
       configBuilder.withMasterUrl(serverUrl);
     }
     Config config = configBuilder.build();
-    return new DefaultOpenShiftClient(config);
+    openShiftClient = new DefaultOpenShiftClient(config);
+  }
+
+  public synchronized static OpenShiftClient getOpenShiftClient() {
+    return openShiftClient;
+  }
+
+  public synchronized static void shutdownOpenShiftClient() {
+    if (openShiftClient != null) {
+      openShiftClient.close();
+      openShiftClient = null;
+    }
   }
 
   /**
@@ -80,26 +100,6 @@ public class OpenShiftUtils {
       }
     }
 
-    return false;
-  }
-
-  /**
-   * Returns true if this OpenShift {@link Build} was created by Jenkins (rather than created by OpenShift
-   * to trigger a new external build)
-   *
-   * @param build the build to check
-   * @return true if this {@link Build} was created by Jenkins or false if it was created by OpenShift
-   */
-  public static boolean isCreatedByJenkins(Build build) {
-    ObjectMeta metadata = build.getMetadata();
-    if (metadata != null) {
-      Map<String, String> annotations = metadata.getAnnotations();
-      if (annotations != null) {
-        if (annotations.get(Constants.ANNOTATION_JENKINS_BUILD_URI) != null) {
-          return true;
-        }
-      }
-    }
     return false;
   }
 
@@ -133,35 +133,6 @@ public class OpenShiftUtils {
   }
 
   /**
-   * Returns the jenkins job name for the given build and the default namespace
-   * by finding the BuildConfig name on the Build via labels
-   *
-   * @param build is the {@link Build} to determine the Jenkins job for
-   * @param defaultNamespace the default namespace that Jenkins is running inside, which
-   *                         by doesn't prefix itself in front of jenkins job names
-   * @return the jenkins job name for the given namespace and build config name and default namesapce
-   */
-  public static String jenkinsJobName(Build build, String defaultNamespace) {
-    String namespace = null;
-    String buildConfigName = null;
-    ObjectMeta metadata = build.getMetadata();
-    if (metadata != null) {
-      namespace = metadata.getNamespace();
-      Map<String, String> labels = metadata.getLabels();
-      if (labels != null) {
-        buildConfigName = labels.get(Constants.LABEL_BUILDCONFIG);
-        if (buildConfigName == null || buildConfigName.length() == 0) {
-          buildConfigName = labels.get(Constants.LABEL_OPENSHIFT_BUILD_CONFIG_NAME);
-        }
-      }
-    }
-    if (buildConfigName != null) {
-      return jenkinsJobName(namespace, buildConfigName, defaultNamespace);
-    }
-    return null;
-  }
-
-  /**
    * Gets the current namespace running Jenkins inside or returns a reasonable default
    *
    * @param configuredNamespace the optional configured namespace
@@ -170,65 +141,13 @@ public class OpenShiftUtils {
    */
   public static String getNamespaceOrUseDefault(String configuredNamespace, OpenShiftClient client) {
     String namespace = configuredNamespace;
-    if (namespace == null || namespace.isEmpty()) {
+    if (StringUtils.isBlank(namespace)) {
       namespace = client.getNamespace();
-      if (namespace == null || namespace.isEmpty()) {
+      if (StringUtils.isBlank(namespace)) {
         namespace = "default";
       }
     }
     return namespace;
-  }
-
-  /**
-   * Checks if the given build maps to the given Jenkins job and build name and build URI
-   *
-   * @param build the OpenShift {@link Build} to check
-   * @param buildName the Jenkins job and build name
-   * @param url is the Jenkins build job URI
-   * @return true if this OpenShift Build maps to the given Jenkins job build
-   */
-  public static boolean openShiftBuildMapsToJenkinsBuild(BuildName buildName, Build build, String url) {
-    ObjectMeta metadata = build.getMetadata();
-    if (metadata != null) {
-      Map<String, String> annotations = metadata.getAnnotations();
-      if (annotations != null) {
-        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URI);
-        if (anotherUrl != null && anotherUrl.equals(url)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Checks if a Jenkins build was created by OpenShift
-   *
-   * @param build the OpenShift {@link Build} to check
-   * @param defaultNamespace the default namespace that Jenkins is running inside, which
-   *                         by doesn't prefix itself in front of jenkins job names
-   * @return true if this build was created by OpenShift and maps to a Jenkins
-   * based BuildConfig but has not yet been updated by Jenkins to associate to a build Run
-   */
-  public static boolean isJenkinsBuildCreatedByOpenShift(Build build, String defaultNamespace) {
-    ObjectMeta metadata = build.getMetadata();
-    if (metadata != null) {
-      Map<String, String> annotations = metadata.getAnnotations();
-      if (annotations != null) {
-        String anotherUrl = annotations.get(ANNOTATION_JENKINS_BUILD_URI);
-        if (anotherUrl == null || anotherUrl.length() == 0) {
-          // lets get the BuildCOnfig name and check that maps to a Jenkins job
-          String jobName = OpenShiftUtils.jenkinsJobName(build, defaultNamespace);
-          if (jobName != null && !jobName.isEmpty()) {
-            Job job = JenkinsUtils.getJob(jobName);
-            if (job != null) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-    return false;
   }
 
   /**
@@ -324,5 +243,77 @@ public class OpenShiftUtils {
     // TODO lets detect the namespace separator in the jobName for cases where a jenkins is used for
     // BuildConfigs in multiple namespaces?
     return new NamespaceName(defaultNamespace, jobName);
+  }
+
+  public static long parseResourceVersion(HasMetadata obj) {
+    try {
+      return Long.parseLong(obj.getMetadata().getResourceVersion());
+    } catch (NumberFormatException e) {
+      return 0;
+    }
+  }
+
+  public static boolean isResourceWithoutStateEqual(HasMetadata oldObj, HasMetadata newObj) {
+    try {
+      byte[] oldDigest = MessageDigest.getInstance("MD5").digest(dumpWithoutRuntimeStateAsYaml(oldObj).getBytes(StandardCharsets.UTF_8));
+      byte[] newDigest = MessageDigest.getInstance("MD5").digest(dumpWithoutRuntimeStateAsYaml(newObj).getBytes(StandardCharsets.UTF_8));
+      return Arrays.equals(oldDigest, newDigest);
+    } catch (NoSuchAlgorithmException | JsonProcessingException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public static String dumpWithoutRuntimeStateAsYaml(HasMetadata obj) throws JsonProcessingException {
+    ObjectMapper statelessMapper = new ObjectMapper(new YAMLFactory());
+    statelessMapper.addMixInAnnotations(ObjectMeta.class, ObjectMetaMixIn.class);
+    statelessMapper.addMixInAnnotations(ReplicationController.class, StatelessReplicationControllerMixIn.class);
+    return statelessMapper.writeValueAsString(obj);
+  }
+
+  abstract class StatelessReplicationControllerMixIn extends ReplicationController {
+    @JsonIgnore
+    private ReplicationControllerStatus status;
+
+    StatelessReplicationControllerMixIn() {
+    }
+
+    @JsonIgnore
+    public abstract ReplicationControllerStatus getStatus();
+  }
+
+  abstract class ObjectMetaMixIn extends ObjectMeta {
+    @JsonIgnore
+    private String creationTimestamp;
+    @JsonIgnore
+    private String deletionTimestamp;
+    @JsonIgnore
+    private Long generation;
+    @JsonIgnore
+    private String resourceVersion;
+    @JsonIgnore
+    private String selfLink;
+    @JsonIgnore
+    private String uid;
+
+    ObjectMetaMixIn() {
+    }
+
+    @JsonIgnore
+    public abstract String getCreationTimestamp();
+
+    @JsonIgnore
+    public abstract String getDeletionTimestamp();
+
+    @JsonIgnore
+    public abstract Long getGeneration();
+
+    @JsonIgnore
+    public abstract String getResourceVersion();
+
+    @JsonIgnore
+    public abstract String getSelfLink();
+
+    @JsonIgnore
+    public abstract String getUid();
   }
 }

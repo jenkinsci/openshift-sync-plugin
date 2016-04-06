@@ -80,6 +80,9 @@ public class BuildConfigToJobMapper {
     } else {
       job.setDefinition(new CpsFlowDefinition(jenkinsfile));
     }
+
+    job.addTrigger(new BuildTrigger());
+
     return job;
   }
 
