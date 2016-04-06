@@ -20,23 +20,23 @@ import hudson.model.Job;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
+import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildList;
+import io.fabric8.openshift.client.OpenShiftClient;
+import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCreatedByJenkins;
-
 public class BuildWatcher implements Watcher<Build> {
-  private final Logger logger = Logger.getLogger(getClass().getName());
-  private final String defaultNamespace;
+  private static final Logger logger = Logger.getLogger(BuildWatcher.class.getName());
 
-  private static final Object lock = new Object();
+  private final OpenShiftClient openShiftClient;
 
-  public BuildWatcher(String defaultNamespace) {
-    this.defaultNamespace = defaultNamespace;
+  public BuildWatcher(OpenShiftClient openShiftClient) {
+    this.openShiftClient = openShiftClient;
   }
 
   @Override
@@ -76,20 +76,17 @@ public class BuildWatcher implements Watcher<Build> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void buildAdded(Build build) throws IOException {
-    if (!isCreatedByJenkins(build)) {
-      synchronized (lock) {
-        String jobName = OpenShiftUtils.jenkinsJobName(build, defaultNamespace);
-        if (jobName != null && !jobName.isEmpty()) {
-          Job job = JenkinsUtils.getJob(jobName);
-          if (job == null) {
-            logger.warning("Could not find Jenkins job `" + jobName + "` for OpenShift Build " + NamespaceName.create(build));
-          } else {
-            JenkinsUtils.triggerJob(job);
-          }
-        } else {
-          logger.warning("Could not find a Jenkins job for OpenShift Build " + NamespaceName.create(build));
-        }
-      }
+    String buildConfigName = build.getStatus().getConfig().getName();
+    if (StringUtils.isEmpty(buildConfigName)) {
+      return;
+    }
+    BuildConfig buildConfig = openShiftClient.buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    if (buildConfig == null) {
+      return;
+    }
+    Job job = BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+    if (job != null) {
+      JenkinsUtils.triggerJob(job, build);
     }
   }
 }

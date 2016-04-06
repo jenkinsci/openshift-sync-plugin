@@ -15,15 +15,10 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
-import com.thoughtworks.xstream.annotations.XStreamOmitField;
 import hudson.Extension;
-import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.openshift.api.model.BuildConfigList;
 import io.fabric8.openshift.api.model.BuildList;
-import io.fabric8.openshift.client.DefaultOpenShiftClient;
-import io.fabric8.openshift.client.OpenShiftClient;
-import io.fabric8.openshift.client.OpenShiftConfigBuilder;
 import jenkins.model.GlobalConfiguration;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
@@ -36,12 +31,12 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 @Extension
 public class GlobalPluginConfiguration extends GlobalConfiguration {
 
-  @XStreamOmitField
-  private final Logger logger = Logger.getLogger(getClass().getName());
+  private static final Logger logger = Logger.getLogger(GlobalPluginConfiguration.class.getName());
 
   private boolean enabled = true;
 
@@ -49,14 +44,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private String namespace;
 
-  @XStreamOmitField
-  private OpenShiftClient openShiftClient = null;
+  private transient Watch buildConfigWatch;
 
-  @XStreamOmitField
-  private Watch buildConfigWatch;
-
-  @XStreamOmitField
-  private Watch buildWatch;
+  private transient Watch buildWatch;
 
   @DataBoundConstructor
   public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
@@ -125,35 +115,27 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       if (buildWatch != null) {
         buildWatch.close();
       }
-      if (openShiftClient != null) {
-        openShiftClient.close();
-        openShiftClient = null;
-      }
+      OpenShiftUtils.shutdownOpenShiftClient();
       return;
     }
     if (enabled) {
-      OpenShiftConfigBuilder configBuilder = new OpenShiftConfigBuilder();
-      if (server != null && !server.isEmpty()) {
-        configBuilder.withMasterUrl(server);
-      }
-      Config config = configBuilder.build();
-      openShiftClient = new DefaultOpenShiftClient(config);
-      this.namespace = getNamespaceOrUseDefault(namespace, openShiftClient);
+      OpenShiftUtils.initializeOpenShiftClient(server);
+      this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
 
       final BuildConfigWatcher buildConfigWatcher = new BuildConfigWatcher(namespace);
-      final BuildWatcher buildWatcher = new BuildWatcher(namespace);
+      final BuildWatcher buildWatcher = new BuildWatcher(getOpenShiftClient());
       final BuildConfigList buildConfigs;
       final BuildList builds;
       if (namespace != null && !namespace.isEmpty()) {
-        buildConfigs = openShiftClient.buildConfigs().inNamespace(namespace).list();
-        builds = openShiftClient.builds().inNamespace(namespace).list();
-        buildConfigWatch = openShiftClient.buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
-        buildWatch = openShiftClient.builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
+        buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
+        buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
+        builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
+        buildWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
       } else {
-        buildConfigs = openShiftClient.buildConfigs().inAnyNamespace().list();
-        builds = openShiftClient.builds().inAnyNamespace().list();
-        buildConfigWatch = openShiftClient.buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
-        buildWatch = openShiftClient.builds().inAnyNamespace().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
+        buildConfigs = getOpenShiftClient().buildConfigs().inAnyNamespace().list();
+        buildConfigWatch = getOpenShiftClient().buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
+        builds = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).list();
+        buildWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
       }
 
       // lets process the initial state

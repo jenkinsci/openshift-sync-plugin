@@ -18,12 +18,7 @@ package io.fabric8.jenkins.openshiftsync;
 /**
  */
 public class Constants {
-  public static final String ANNOTATION_JENKINS_JOB_URI = "openshift.io/jenkins-job-uri";
   public static final String ANNOTATION_JENKINS_BUILD_URI = "openshift.io/jenkins-build-uri";
   public static final String ANNOTATION_JENKINS_LOG_URL = "openshift.io/jenkins-log-url";
   public static final String ANNOTATION_JENKINS_STATUS_JSON = "openshift.io/jenkins-status-json";
-  public static final String ANNOTATION_OPENSHIFT_BUILD_NUMBER = "openshift.io/build.number";
-
-  public static final String LABEL_BUILDCONFIG = "buildconfig";
-  public static final String LABEL_OPENSHIFT_BUILD_CONFIG_NAME = "openshift.io/build-config.name";
 }
