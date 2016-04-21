@@ -17,12 +17,14 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
+import hudson.security.ACL;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigList;
 import jenkins.model.Jenkins;
+import jenkins.security.NotReallyRoleSensitiveCallable;
 import org.apache.tools.ant.filters.StringInputStream;
 import org.jvnet.hudson.reactor.ReactorException;
 
@@ -86,51 +88,57 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           modifyJob(buildConfig);
           break;
       }
-    } catch (IOException | InterruptedException e) {
+    } catch (Exception e) {
       logger.log(Level.WARNING, "Caught: " + e, e);
     }
   }
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  private void upsertJob(BuildConfig buildConfig) throws IOException {
+  private void upsertJob(final BuildConfig buildConfig) throws IOException {
     if (isJenkinsBuildConfig(buildConfig)) {
-      String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
-      Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
-      if (jobFromBuildConfig == null) {
-        return;
-      }
-
-      jobFromBuildConfig.addProperty(new BuildConfigProjectProperty(buildConfig));
-
-      InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
-
-      Jenkins jenkins = Jenkins.getInstance();
-      Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-      if (job == null) {
-        jenkins.createProjectFromXML(
-          jobName,
-          jobStream
-        );
-        logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
-      } else {
-        BuildConfigProjectProperty buildConfigProjectProperty = (BuildConfigProjectProperty) job.getProperty(BuildConfigProjectProperty.class);
-        if (buildConfigProjectProperty != null) {
-          long updatedBCResourceVersion = parseResourceVersion(buildConfig);
-          long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getBuildConfig());
-          if (oldBCResourceVersion > updatedBCResourceVersion) {
-            return;
+      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, IOException>() {
+        @Override
+        public Void call() throws IOException {
+          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
+          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
+          if (jobFromBuildConfig == null) {
+            return null;
           }
+
+          jobFromBuildConfig.addProperty(new BuildConfigProjectProperty(buildConfig));
+
+          InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+
+          Jenkins jenkins = Jenkins.getInstance();
+          Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+          if (job == null) {
+            jenkins.createProjectFromXML(
+              jobName,
+              jobStream
+            );
+            logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
+          } else {
+            BuildConfigProjectProperty buildConfigProjectProperty = (BuildConfigProjectProperty) job.getProperty(BuildConfigProjectProperty.class);
+            if (buildConfigProjectProperty != null) {
+              long updatedBCResourceVersion = parseResourceVersion(buildConfig);
+              long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getBuildConfig());
+              if (oldBCResourceVersion > updatedBCResourceVersion) {
+                return null;
+              }
+            }
+            Source source = new StreamSource(jobStream);
+            job.updateByXml(source);
+            job.save();
+            logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
+          }
+          return null;
         }
-        Source source = new StreamSource(jobStream);
-        job.updateByXml(source);
-        job.save();
-        logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
-      }
+      });
     }
   }
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  private void modifyJob(BuildConfig buildConfig) throws IOException, InterruptedException {
+  private void modifyJob(BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
       upsertJob(buildConfig);
       return;
@@ -141,15 +149,24 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   }
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  private void deleteJob(BuildConfig buildConfig) throws IOException, InterruptedException {
-    Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+  private void deleteJob(final BuildConfig buildConfig) throws Exception {
+    final Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
     if (job != null) {
-      job.delete();
-      try {
-        Jenkins.getInstance().reload();
-      } catch (ReactorException e) {
-        logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + job.getName() + " from BuildConfig " + NamespaceName.create(buildConfig));
-      }
+      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
+        @Override
+        public Void call() throws Exception {
+          job.delete();
+          try {
+            Jenkins jenkins = Jenkins.getInstance();
+            if (jenkins != null) {
+              jenkins.reload();
+            }
+          } catch (ReactorException e) {
+            logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + job.getName() + " from BuildConfig " + NamespaceName.create(buildConfig));
+          }
+          return null;
+        }
+      });
     }
   }
 }
