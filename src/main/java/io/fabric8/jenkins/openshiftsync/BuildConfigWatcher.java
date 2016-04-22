@@ -18,7 +18,6 @@ package io.fabric8.jenkins.openshiftsync;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
 import hudson.security.ACL;
-import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
@@ -37,6 +36,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.xstream2;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
 
@@ -107,7 +107,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
           jobFromBuildConfig.addProperty(new BuildConfigProjectProperty(buildConfig));
 
-          InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+          InputStream jobStream = new StringInputStream(xstream2().toXML(jobFromBuildConfig));
 
           Jenkins jenkins = Jenkins.getInstance();
           Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
