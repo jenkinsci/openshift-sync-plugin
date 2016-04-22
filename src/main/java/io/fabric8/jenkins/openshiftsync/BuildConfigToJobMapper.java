@@ -25,6 +25,7 @@ import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.BuildStrategy;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import jenkins.model.Jenkins;
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -33,6 +34,7 @@ import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
+import java.io.File;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -70,6 +72,9 @@ public class BuildConfigToJobMapper {
         source.getGit().getUri() != null) {
         if (jenkinsfilePath == null) {
           jenkinsfilePath = DEFAULT_JENKINS_FILEPATH;
+        }
+        if (!StringUtils.isEmpty(source.getContextDir())) {
+          jenkinsfilePath = new File(source.getContextDir(), jenkinsfilePath).getPath();
         }
         GitSCM scm = new GitSCM(source.getGit().getUri());
         job.setDefinition(new CpsScmFlowDefinition(scm, jenkinsfilePath));
