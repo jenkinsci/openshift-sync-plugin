@@ -19,7 +19,9 @@ import hudson.model.Cause;
 import hudson.model.Job;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
+import hudson.util.XStream2;
 import io.fabric8.openshift.api.model.Build;
+import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
@@ -72,5 +74,13 @@ public class JenkinsUtils {
       WorkflowJob workflowJob = (WorkflowJob) job;
       workflowJob.scheduleBuild(cause);
     }
+  }
+
+  public static XStream2 xstream2() {
+    XStream2 xs = new XStream2();
+    xs.aliasType("OpenShiftBuildConfig", BuildConfig.class);
+    xs.addCompatibilityAlias(BuildConfig.class.getName(), BuildConfig.class);
+    xs.addCompatibilityAlias("OpenShiftBuildConfig", BuildConfig.class);
+    return xs;
   }
 }

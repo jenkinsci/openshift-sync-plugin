@@ -102,8 +102,12 @@
     <repository>
       <id>nexus-oss-snapshots</id>
       <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-      <snapshots><enabled>true</enabled></snapshots>
-      <releases><enabled>false</enabled></releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
     </repository>
   </repositories>
   <pluginRepositories>
@@ -150,6 +154,12 @@
       <version>1.0</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.csanchez.jenkins.plugins</groupId>
+      <artifactId>kubernetes</artifactId>
+      <version>0.6</version>
+    </dependency>
+
 
     <!-- testing -->
     <dependency>
@@ -170,6 +180,13 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.jenkins-ci.tools</groupId>
+        <artifactId>maven-hpi-plugin</artifactId>
+        <configuration>
+          <pluginFirstClassLoader>true</pluginFirstClassLoader>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.jvnet.localizer</groupId>
         <artifactId>maven-localizer-plugin</artifactId>

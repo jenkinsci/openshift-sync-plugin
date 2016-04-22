@@ -19,11 +19,12 @@ import hudson.Extension;
 import hudson.model.Job;
 import hudson.model.JobProperty;
 import hudson.model.JobPropertyDescriptor;
-import hudson.util.XStream2;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.ParameterizedJobMixIn;
 import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
+
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.xstream2;
 
 /**
  * Stores the OpenShift Build Config related project properties.
@@ -40,7 +41,7 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
   @DataBoundConstructor
   public BuildConfigProjectProperty(String buildConfigAsXML) {
     if (StringUtils.isNotBlank(buildConfigAsXML)) {
-      this.buildConfig = (BuildConfig) new XStream2().fromXML(buildConfigAsXML);
+      this.buildConfig = (BuildConfig) xstream2().fromXML(buildConfigAsXML);
     }
   }
 
@@ -56,7 +57,7 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     if (buildConfig == null) {
       return null;
     }
-    return new XStream2().toXML(buildConfig);
+    return xstream2().toXML(buildConfig);
   }
 
   @Extension
