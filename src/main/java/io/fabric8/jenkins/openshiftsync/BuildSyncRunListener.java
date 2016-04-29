@@ -15,9 +15,9 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
-import com.squareup.okhttp.OkHttpClient;
-import com.squareup.okhttp.Request;
-import com.squareup.okhttp.Response;
+import com.cloudbees.workflow.rest.external.RunExt;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import hudson.Extension;
 import hudson.model.Result;
 import hudson.model.Run;
@@ -179,22 +179,20 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   protected void pollRun(Run run) {
-    String root = JenkinsUtils.getRootUrl();
+    if (!(run instanceof WorkflowRun)) {
+      throw new IllegalStateException("Cannot poll a non-workflow run");
+    }
 
-    String fullUrl = joinPaths(root, run.getUrl(), "/wfapi/describe");
-    logger.info("Polling URL: " + fullUrl);
-
-    OkHttpClient client = new OkHttpClient();
-    Request request = new Request.Builder()
-      .url(fullUrl)
-      .build();
+    // TODO Once https://github.com/jenkinsci/pipeline-stage-view-plugin/pull/11 is merged & released this should switch
+    // back to RunExt.create((WorkflowRun) run).
+    RunExt wfRunExt = RunExt.createMinimal((WorkflowRun) run);
+    wfRunExt = RunExt.computeTimings(wfRunExt);
 
     try {
-      Response response = client.newCall(request).execute();
-      String json = response.body().string();
+      String json = new ObjectMapper().writeValueAsString(wfRunExt);
       upsertBuild(run, json);
-    } catch (IOException e) {
-      logger.log(Level.WARNING, "Failed to poll " + fullUrl + ". " + e, e);
+    } catch (JsonProcessingException e) {
+      logger.log(Level.WARNING, "Failed to serialize workflow run. " + e, e);
     }
   }
 
