@@ -183,10 +183,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       throw new IllegalStateException("Cannot poll a non-workflow run");
     }
 
-    // TODO Once https://github.com/jenkinsci/pipeline-stage-view-plugin/pull/11 is merged & released this should switch
-    // back to RunExt.create((WorkflowRun) run).
-    RunExt wfRunExt = RunExt.createMinimal((WorkflowRun) run);
-    wfRunExt = RunExt.computeTimings(wfRunExt);
+    RunExt wfRunExt = RunExt.create((WorkflowRun) run);
 
     try {
       String json = new ObjectMapper().writeValueAsString(wfRunExt);
