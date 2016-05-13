@@ -18,14 +18,16 @@ package io.fabric8.jenkins.openshiftsync;
 import hudson.model.Job;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
+import hudson.plugins.git.SubmoduleConfig;
+import hudson.plugins.git.UserRemoteConfig;
 import hudson.scm.SCM;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.BuildStrategy;
+import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import jenkins.model.Jenkins;
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -35,8 +37,12 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
+
+import static org.apache.commons.lang.StringUtils.isEmpty;
+import static org.apache.commons.lang.StringUtils.isNotBlank;
 
 public class BuildConfigToJobMapper {
   public static final String JENKINS_PIPELINE_BUILD_STRATEGY = "JenkinsPipeline";
@@ -73,10 +79,24 @@ public class BuildConfigToJobMapper {
         if (jenkinsfilePath == null) {
           jenkinsfilePath = DEFAULT_JENKINS_FILEPATH;
         }
-        if (!StringUtils.isEmpty(source.getContextDir())) {
+        if (!isEmpty(source.getContextDir())) {
           jenkinsfilePath = new File(source.getContextDir(), jenkinsfilePath).getPath();
         }
-        GitSCM scm = new GitSCM(source.getGit().getUri());
+        GitBuildSource gitSource = source.getGit();
+        String branchRef = gitSource.getRef();
+        List<BranchSpec> branchSpecs = Collections.emptyList();
+        if (isNotBlank(branchRef)) {
+          branchSpecs = Collections.singletonList(new BranchSpec(branchRef));
+        }
+        GitSCM scm = new GitSCM(
+          Collections.singletonList(new UserRemoteConfig(gitSource.getUri(), null, null, null)),
+          branchSpecs,
+          false,
+          Collections.<SubmoduleConfig>emptyList(),
+          null,
+          null,
+          null
+          );
         job.setDefinition(new CpsScmFlowDefinition(scm, jenkinsfilePath));
       } else {
         LOGGER.warning("BuildConfig does not contain source repository information - cannot map BuildConfig to Jenkins job");
