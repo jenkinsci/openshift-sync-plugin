@@ -30,6 +30,9 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
+
 public class BuildWatcher implements Watcher<Build> {
   private static final Logger logger = Logger.getLogger(BuildWatcher.class.getName());
 
@@ -51,10 +54,12 @@ public class BuildWatcher implements Watcher<Build> {
     List<Build> items = buildList.getItems();
     if (items != null) {
       for (Build build : items) {
-        try {
-          buildAdded(build);
-        } catch (IOException e) {
-          e.printStackTrace();
+        if (build.getStatus().getPhase().equals(NEW)) {
+          try {
+            buildAdded(build);
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
         }
       }
     }
@@ -68,25 +73,46 @@ public class BuildWatcher implements Watcher<Build> {
         case ADDED:
           buildAdded(build);
           break;
+        case MODIFIED:
+          buildModified(build);
+          break;
       }
     } catch (Exception e) {
       logger.log(Level.WARNING, "Caught: " + e, e);
     }
   }
 
+  private void buildModified(Build build) {
+    if (Boolean.TRUE.equals(build.getStatus().getCancelled())) {
+      Job job = getJobFromBuild(build);
+      if (job != null) {
+        JenkinsUtils.cancelBuild(job, build);
+      }
+    }
+  }
+
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void buildAdded(Build build) throws IOException {
-    String buildConfigName = build.getStatus().getConfig().getName();
-    if (StringUtils.isEmpty(buildConfigName)) {
+    if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
+      cancelOpenShiftBuild(build);
       return;
     }
-    BuildConfig buildConfig = openShiftClient.buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
-    if (buildConfig == null) {
-      return;
-    }
-    Job job = BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+
+    Job job = getJobFromBuild(build);
     if (job != null) {
       JenkinsUtils.triggerJob(job, build);
     }
+  }
+
+  private Job getJobFromBuild(Build build) {
+    String buildConfigName = build.getStatus().getConfig().getName();
+    if (StringUtils.isEmpty(buildConfigName)) {
+      return null;
+    }
+    BuildConfig buildConfig = openShiftClient.buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    if (buildConfig == null) {
+      return null;
+    }
+    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
   }
 }

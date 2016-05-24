@@ -48,6 +48,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private transient Watch buildWatch;
 
+  private transient Watch runningBuildsWatch;
+
   @DataBoundConstructor
   public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
     this.enabled = enable;
@@ -115,6 +117,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       if (buildWatch != null) {
         buildWatch.close();
       }
+      if (runningBuildsWatch != null) {
+        runningBuildsWatch.close();
+      }
       OpenShiftUtils.shutdownOpenShiftClient();
       return;
     }
@@ -131,11 +136,13 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
         buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
         builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
         buildWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
+        runningBuildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
       } else {
         buildConfigs = getOpenShiftClient().buildConfigs().inAnyNamespace().list();
         buildConfigWatch = getOpenShiftClient().buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
         builds = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).list();
         buildWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
+        runningBuildsWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
       }
 
       // lets process the initial state
