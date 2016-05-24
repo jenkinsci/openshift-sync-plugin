@@ -16,7 +16,9 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Cause;
+import hudson.model.Executor;
 import hudson.model.Job;
+import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
 import hudson.util.XStream2;
@@ -24,8 +26,12 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.util.logging.Logger;
+
+import static hudson.model.Result.ABORTED;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 
 /**
  */
@@ -73,6 +79,37 @@ public class JenkinsUtils {
     if (job instanceof WorkflowJob) {
       WorkflowJob workflowJob = (WorkflowJob) job;
       workflowJob.scheduleBuild(cause);
+    }
+  }
+
+  public static void cancelBuild(Job job, Build build) {
+    String buildUid = build.getMetadata().getUid();
+    Jenkins jenkins = Jenkins.getInstance();
+    if (jenkins != null) {
+      Queue buildQueue = jenkins.getQueue();
+      for (Queue.Item item : buildQueue.getItems()) {
+        for (Cause cause : item.getCauses()) {
+          if (cause instanceof BuildCause && ((BuildCause) cause).getBuild().getMetadata().getUid().equals(buildUid)) {
+            buildQueue.cancel(item);
+            cancelOpenShiftBuild(build);
+            return;
+          }
+        }
+      }
+      for (Object obj : job.getNewBuilds()) {
+        if (obj instanceof WorkflowRun) {
+          WorkflowRun b = (WorkflowRun) obj;
+          BuildCause cause = b.getCause(BuildCause.class);
+          if (cause != null && cause.getBuild().getMetadata().getUid().equals(buildUid)) {
+            Executor e = b.getExecutor();
+            if (e != null) {
+              e.interrupt(ABORTED);
+              cancelOpenShiftBuild(build);
+              return;
+            }
+          }
+        }
+      }
     }
   }
 

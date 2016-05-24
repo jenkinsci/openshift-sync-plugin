@@ -26,6 +26,7 @@ import io.fabric8.kubernetes.api.model.ReplicationControllerStatus;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServiceSpec;
 import io.fabric8.kubernetes.client.Config;
+import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
@@ -44,6 +45,8 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 
 /**
  */
@@ -230,6 +233,14 @@ public class OpenShiftUtils {
     }
     gitSource.setUri(gitUrl);
     gitSource.setRef(ref);
+  }
+
+  public static void cancelOpenShiftBuild(Build build) {
+    logger.info("cancelling build in namespace " + build.getMetadata().getNamespace() + " with name: " + build.getMetadata().getName());
+    getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
+      .edit()
+      .editStatus().withPhase(CANCELLED).endStatus()
+      .done();
   }
 
   /**
