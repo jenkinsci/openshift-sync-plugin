@@ -18,12 +18,15 @@ package io.fabric8.jenkins.openshiftsync;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
 import hudson.security.ACL;
+import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigList;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
+import jenkins.util.Timer;
 import org.apache.tools.ant.filters.StringInputStream;
 import org.jvnet.hudson.reactor.ReactorException;
 
@@ -32,13 +35,16 @@ import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.xstream2;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
+import static java.net.HttpURLConnection.HTTP_GONE;
 
 /**
  * Watches {@link BuildConfig} objects in OpenShift and for WorkflowJobs we ensure there is a
@@ -46,16 +52,80 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersi
  */
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private final Logger logger = Logger.getLogger(getClass().getName());
-  private final String defaultNamespace;
+  private final String namespace;
+  private Watch buildConfigWatch;
 
   public BuildConfigWatcher(String defaultNamespace) {
-    this.defaultNamespace = defaultNamespace;
+    this.namespace = defaultNamespace;
+  }
+
+  public void start() {
+    final BuildConfigList buildConfigs;
+    if (namespace != null && !namespace.isEmpty()) {
+      buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
+      buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
+    } else {
+      buildConfigs = getOpenShiftClient().buildConfigs().inAnyNamespace().list();
+      buildConfigWatch = getOpenShiftClient().buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
+    }
+
+    // lets process the initial state
+    logger.info("Now handling startup build configs!!");
+    // lets do this in a background thread to avoid errors like:
+    //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
+    Runnable task = new Runnable() {
+      @Override
+      public void run() {
+        logger.info("Waiting for Jenkins to be started");
+        while (true) {
+          Jenkins jenkins = Jenkins.getInstance();
+          if (jenkins != null) {
+            if (jenkins.isAcceptingTasks()) {
+              break;
+            }
+          }
+          try {
+            Thread.sleep(500);
+          } catch (InterruptedException e) {
+            // ignore
+          }
+        }
+        logger.info("loading initial BuildConfigs resources");
+
+        try {
+          onInitialBuildConfigs(buildConfigs);
+          logger.info("loaded initial BuildConfigs resources");
+        } catch (Exception e) {
+          logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
+        }
+      }
+    };
+    // lets give jenkins a while to get started ;)
+    Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
+  }
+
+  public void stop() {
+    if (buildConfigWatch != null) {
+      buildConfigWatch.close();
+    }
   }
 
   @Override
   public void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
+
+      if (e.getStatus() != null && e.getStatus().getCode() == HTTP_GONE) {
+        stop();
+        start();
+      }
+    }
+  }
+
+  @Override
+  public void errorReceived(Status status) {
+    if (status != null) {
+      logger.warning("Watch error received: " + status.toString());
     }
   }
 
@@ -99,8 +169,8 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, IOException>() {
         @Override
         public Void call() throws IOException {
-          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, defaultNamespace);
-          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, defaultNamespace);
+          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, namespace);
+          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, namespace);
           if (jobFromBuildConfig == null) {
             return null;
           }

@@ -16,18 +16,11 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.Extension;
-import io.fabric8.kubernetes.client.Watch;
-import io.fabric8.openshift.api.model.BuildConfigList;
-import io.fabric8.openshift.api.model.BuildList;
 import jenkins.model.GlobalConfiguration;
-import jenkins.model.Jenkins;
-import jenkins.util.Timer;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
@@ -44,11 +37,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private String namespace;
 
-  private transient Watch buildConfigWatch;
+  private transient BuildWatcher buildWatcher;
 
-  private transient Watch buildWatch;
-
-  private transient Watch runningBuildsWatch;
+  private transient BuildConfigWatcher buildConfigWatcher;
 
   @DataBoundConstructor
   public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
@@ -111,14 +102,11 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
     logger.info("using default kubernetes namespace: " + namespace);
 
     if (!enabled) {
-      if (buildConfigWatch != null) {
-        buildConfigWatch.close();
+      if (buildConfigWatcher != null) {
+        buildConfigWatcher.stop();
       }
-      if (buildWatch != null) {
-        buildWatch.close();
-      }
-      if (runningBuildsWatch != null) {
-        runningBuildsWatch.close();
+      if (buildWatcher != null) {
+        buildWatcher.stop();
       }
       OpenShiftUtils.shutdownOpenShiftClient();
       return;
@@ -127,63 +115,12 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       OpenShiftUtils.initializeOpenShiftClient(server);
       this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
 
-      final BuildConfigWatcher buildConfigWatcher = new BuildConfigWatcher(namespace);
-      final BuildWatcher buildWatcher = new BuildWatcher(getOpenShiftClient());
-      final BuildConfigList buildConfigs;
-      final BuildList builds;
-      if (namespace != null && !namespace.isEmpty()) {
-        buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
-        buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
-        builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
-        buildWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
-        runningBuildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
-      } else {
-        buildConfigs = getOpenShiftClient().buildConfigs().inAnyNamespace().list();
-        buildConfigWatch = getOpenShiftClient().buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(buildConfigWatcher);
-        builds = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).list();
-        buildWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
-        runningBuildsWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(buildWatcher);
-      }
+      buildWatcher = new BuildWatcher(namespace);
+      buildWatcher.start();
+      buildConfigWatcher = new BuildConfigWatcher(namespace);
+      buildConfigWatcher.start();
 
-      // lets process the initial state
-      logger.info("Now handling startup build configs!!");
-      // lets do this in a background thread to avoid errors like:
-      //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
-      Runnable task = new Runnable() {
-        @Override
-        public void run() {
-          logger.info("Waiting for Jenkins to be started");
-          while (true) {
-            Jenkins jenkins = Jenkins.getInstance();
-            if (jenkins != null) {
-              if (jenkins.isAcceptingTasks()) {
-                break;
-              }
-            }
-            try {
-              Thread.sleep(500);
-            } catch (InterruptedException e) {
-              // ignore
-            }
-          }
-          logger.info("loading initial BuildConfigs resources");
 
-          try {
-            buildConfigWatcher.onInitialBuildConfigs(buildConfigs);
-            logger.info("loaded initial BuildConfigs resources");
-          } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
-          }
-          try {
-            buildWatcher.onInitialBuilds(builds);
-            logger.info("loaded initial Builds resources");
-          } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
-          }
-        }
-      };
-      // lets give jenkins a while to get started ;)
-      Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
     }
   }
 

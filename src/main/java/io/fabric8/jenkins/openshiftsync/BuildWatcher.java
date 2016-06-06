@@ -17,35 +17,103 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
+import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildList;
-import io.fabric8.openshift.client.OpenShiftClient;
+import jenkins.model.Jenkins;
+import jenkins.util.Timer;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static java.net.HttpURLConnection.HTTP_GONE;
 
 public class BuildWatcher implements Watcher<Build> {
   private static final Logger logger = Logger.getLogger(BuildWatcher.class.getName());
+  private final String namespace;
+  private Watch newBuildsWatch;
+  private Watch runningBuildsWatch;
 
-  private final OpenShiftClient openShiftClient;
+  public BuildWatcher(String defaultNamespace) {
+    this.namespace = defaultNamespace;
+  }
 
-  public BuildWatcher(OpenShiftClient openShiftClient) {
-    this.openShiftClient = openShiftClient;
+  public void start() {
+    final BuildList builds;
+    if (namespace != null && !namespace.isEmpty()) {
+      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
+      newBuildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      runningBuildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+    } else {
+      builds = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).list();
+      newBuildsWatch = getOpenShiftClient().builds().inAnyNamespace().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      runningBuildsWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+    }
+
+    // lets process the initial state
+    logger.info("Now handling startup builds!!");
+    // lets do this in a background thread to avoid errors like:
+    //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
+    Runnable task = new Runnable() {
+      @Override
+      public void run() {
+        logger.info("Waiting for Jenkins to be started");
+        while (true) {
+          Jenkins jenkins = Jenkins.getInstance();
+          if (jenkins != null) {
+            if (jenkins.isAcceptingTasks()) {
+              break;
+            }
+          }
+          try {
+            Thread.sleep(500);
+          } catch (InterruptedException e) {
+            // ignore
+          }
+        }
+        logger.info("loading initial Builds resources");
+
+        try {
+          onInitialBuilds(builds);
+          logger.info("loaded initial Builds resources");
+        } catch (Exception e) {
+          logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
+        }
+      }
+    };
+    // lets give jenkins a while to get started ;)
+    Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
+  }
+
+  public void stop() {
+    if (newBuildsWatch != null) {
+      newBuildsWatch.close();
+    }
+    if (runningBuildsWatch != null) {
+      runningBuildsWatch.close();
+    }
   }
 
   @Override
   public void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
+
+      if (e.getStatus() != null && e.getStatus().getCode() == HTTP_GONE) {
+        stop();
+        start();
+      }
     }
   }
 
@@ -82,6 +150,13 @@ public class BuildWatcher implements Watcher<Build> {
     }
   }
 
+  @Override
+  public void errorReceived(Status status) {
+    if (status != null) {
+      logger.warning("Watch error received: " + status.toString());
+    }
+  }
+
   private void buildModified(Build build) {
     if (Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       Job job = getJobFromBuild(build);
@@ -109,7 +184,7 @@ public class BuildWatcher implements Watcher<Build> {
     if (StringUtils.isEmpty(buildConfigName)) {
       return null;
     }
-    BuildConfig buildConfig = openShiftClient.buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
     if (buildConfig == null) {
       return null;
     }
