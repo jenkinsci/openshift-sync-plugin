@@ -43,6 +43,7 @@ import java.util.logging.Logger;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_LOG_URL;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STATUS_JSON;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 /**
@@ -53,8 +54,6 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
 public class BuildSyncRunListener extends RunListener<Run> {
 
   private static final Logger logger = Logger.getLogger(BuildSyncRunListener.class.getName());
-
-  private static final DateTimeFormatter dateFormatter = ISODateTimeFormat.dateTime();
 
   private long pollPeriodMs = 2000;
   private String defaultNamespace;
@@ -213,13 +212,11 @@ public class BuildSyncRunListener extends RunListener<Run> {
     String startTime = null;
     String completionTime = null;
     if (started > 0) {
-      DateTime dateTime = new DateTime(startTime);
-      startTime = dateFormatter.print(dateTime);
+      startTime = formatTimestamp(started);
 
       long duration = getDuration(run);
       if (duration > 0) {
-        dateTime = new DateTime(started + duration);
-        completionTime = dateFormatter.print(dateTime);
+        completionTime = formatTimestamp(started + duration);
       }
     }
 
