@@ -37,6 +37,9 @@ import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
 import org.apache.commons.lang.StringUtils;
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.ISODateTimeFormat;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -54,6 +57,8 @@ public class OpenShiftUtils {
   private final static Logger logger = Logger.getLogger(OpenShiftUtils.class.getName());
 
   private static OpenShiftClient openShiftClient;
+
+  private static final DateTimeFormatter dateFormatter = ISODateTimeFormat.dateTimeNoMillis();
 
   /**
    * Initializes an {@link OpenShiftClient}
@@ -262,6 +267,14 @@ public class OpenShiftUtils {
     } catch (NumberFormatException e) {
       return 0;
     }
+  }
+
+  public static String formatTimestamp(long timestamp) {
+    return dateFormatter.print(new DateTime(timestamp));
+  }
+
+  public static long parseTimestamp(String timestamp) {
+    return dateFormatter.parseMillis(timestamp);
   }
 
   public static boolean isResourceWithoutStateEqual(HasMetadata oldObj, HasMetadata newObj) {

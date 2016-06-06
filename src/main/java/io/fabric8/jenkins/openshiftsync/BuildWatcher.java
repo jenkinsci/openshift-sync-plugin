@@ -29,6 +29,8 @@ import jenkins.util.Timer;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -37,6 +39,7 @@ import java.util.logging.Logger;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseTimestamp;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
 public class BuildWatcher implements Watcher<Build> {
@@ -119,8 +122,20 @@ public class BuildWatcher implements Watcher<Build> {
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   public void onInitialBuilds(BuildList buildList) {
+
     List<Build> items = buildList.getItems();
     if (items != null) {
+
+      Collections.sort(items, new Comparator<Build>() {
+        @Override
+        public int compare(Build b1, Build b2) {
+          return Long.compare(
+            parseTimestamp(b1.getMetadata().getCreationTimestamp()),
+            parseTimestamp(b2.getMetadata().getCreationTimestamp())
+          );
+        }
+      });
+
       for (Build build : items) {
         if (build.getStatus().getPhase().equals(NEW)) {
           try {
