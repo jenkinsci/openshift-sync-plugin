@@ -24,8 +24,6 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.listeners.RunListener;
 import io.fabric8.openshift.api.model.Build;
-import io.fabric8.openshift.api.model.BuildStatus;
-import io.fabric8.openshift.api.model.BuildStatusBuilder;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.joda.time.DateTime;
@@ -35,7 +33,6 @@ import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
@@ -204,57 +201,53 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
 
     final Build build = cause.getBuild();
-    Map<String, String> annotations = build.getMetadata().getAnnotations();
-    annotations.put(ANNOTATION_JENKINS_STATUS_JSON, json);
 
     String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), defaultNamespace);
     String logsUrl = joinPaths(rootUrl, run.getUrl(), "/consoleText");
 
-    if (!annotations.containsKey(ANNOTATION_JENKINS_BUILD_URI)) {
-      annotations.put(ANNOTATION_JENKINS_BUILD_URI, run.getUrl());
-    }
-    if (!annotations.containsKey(ANNOTATION_JENKINS_LOG_URL)) {
-      annotations.put(ANNOTATION_JENKINS_LOG_URL, logsUrl);
-    }
     String name = build.getMetadata().getName();
 
-    build.setStatus(updateBuildStatus(build.getStatus(), run));
+    String phase = runToBuildPhase(run);
+
+    long started = getStartTime(run);
+    String startTime = null;
+    String completionTime = null;
+    if (started > 0) {
+      DateTime dateTime = new DateTime(startTime);
+      startTime = dateFormatter.print(dateTime);
+
+      long duration = getDuration(run);
+      if (duration > 0) {
+        dateTime = new DateTime(started + duration);
+        completionTime = dateFormatter.print(dateTime);
+      }
+    }
 
     if (logger.isLoggable(Level.FINE)) {
       logger.fine("generated build in namespace " + defaultNamespace + " with name: " + name + " phase: " + build.getStatus().getPhase() + " data: " + build);
     }
 
     logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + build.getStatus().getPhase());
-    getOpenShiftClient().builds().inNamespace(defaultNamespace).withName(name).replace(build);
+    getOpenShiftClient().builds().inNamespace(defaultNamespace).withName(name).edit()
+      .editMetadata()
+        .addToAnnotations(ANNOTATION_JENKINS_STATUS_JSON, json)
+        .addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, run.getUrl())
+        .addToAnnotations(ANNOTATION_JENKINS_LOG_URL, logsUrl)
+      .endMetadata()
+      .editStatus()
+        .withPhase(phase)
+        .withStartTimestamp(startTime)
+        .withCompletionTimestamp(completionTime)
+      .endStatus()
+    .done();
   }
 
-  private BuildStatus updateBuildStatus(BuildStatus buildStatus, Run run) {
-    BuildStatusBuilder builder;
-    if (buildStatus != null) {
-      builder = new BuildStatusBuilder(buildStatus);
-      if (buildStatus.getPhase() != null) {
-        if (buildStatus.getPhase().equals(BuildPhases.NEW)
-          || buildStatus.getPhase().equals(BuildPhases.PENDING)
-          || buildStatus.getPhase().equals(BuildPhases.RUNNING)) {
-          builder.withPhase(runToBuildPhase(run));
-        }
-      }
-    } else {
-      builder = new BuildStatusBuilder();
-    }
+  private long getStartTime(Run run) {
+    return run.getStartTimeInMillis();
+  }
 
-    long startTime = run.getStartTimeInMillis();
-    if (startTime > 0) {
-      DateTime dateTime = new DateTime(startTime);
-      builder.withStartTimestamp(dateFormatter.print(dateTime));
-    }
-    long duration = run.getDuration();
-    if (duration > 0) {
-      DateTime dateTime = new DateTime(startTime + duration);
-      builder.withCompletionTimestamp(dateFormatter.print(dateTime));
-    }
-
-    return builder.build();
+  private long getDuration(Run run) {
+    return run.getDuration();
   }
 
   private String runToBuildPhase(Run run) {
