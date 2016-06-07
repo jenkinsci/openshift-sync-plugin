@@ -19,7 +19,6 @@ def updateDependencies(source){
 
   def properties = []
   properties << ['<openshift-client.version>','io/fabric8/openshift-client']
-  properties << ['<kubernetes-model.version>','io/fabric8/kubernetes-model']
 
   updatePropertyVersion{
     updates = properties
