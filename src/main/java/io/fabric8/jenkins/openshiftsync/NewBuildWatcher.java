@@ -22,11 +22,9 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
-import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildList;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
-import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -37,18 +35,18 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseTimestamp;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
-public class BuildWatcher implements Watcher<Build> {
-  private static final Logger logger = Logger.getLogger(BuildWatcher.class.getName());
+public class NewBuildWatcher implements Watcher<Build> {
+  private static final Logger logger = Logger.getLogger(NewBuildWatcher.class.getName());
   private final String namespace;
-  private Watch newBuildsWatch;
-  private Watch runningBuildsWatch;
+  private Watch buildsWatch;
 
-  public BuildWatcher(String defaultNamespace) {
+  public NewBuildWatcher(String defaultNamespace) {
     this.namespace = defaultNamespace;
   }
 
@@ -56,12 +54,10 @@ public class BuildWatcher implements Watcher<Build> {
     final BuildList builds;
     if (namespace != null && !namespace.isEmpty()) {
       builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
-      newBuildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
-      runningBuildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     } else {
-      builds = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.NEW).list();
-      newBuildsWatch = getOpenShiftClient().builds().inAnyNamespace().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
-      runningBuildsWatch = getOpenShiftClient().builds().inAnyNamespace().withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      builds = getOpenShiftClient().builds().withField("status", BuildPhases.NEW).list();
+      buildsWatch = getOpenShiftClient().builds().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     }
 
     // lets process the initial state
@@ -100,11 +96,8 @@ public class BuildWatcher implements Watcher<Build> {
   }
 
   public void stop() {
-    if (newBuildsWatch != null) {
-      newBuildsWatch.close();
-    }
-    if (runningBuildsWatch != null) {
-      runningBuildsWatch.close();
+    if (buildsWatch != null) {
+      buildsWatch.close();
     }
   }
 
@@ -156,9 +149,6 @@ public class BuildWatcher implements Watcher<Build> {
         case ADDED:
           buildAdded(build);
           break;
-        case MODIFIED:
-          buildModified(build);
-          break;
       }
     } catch (Exception e) {
       logger.log(Level.WARNING, "Caught: " + e, e);
@@ -169,15 +159,6 @@ public class BuildWatcher implements Watcher<Build> {
   public void errorReceived(Status status) {
     if (status != null) {
       logger.warning("Watch error received: " + status.toString());
-    }
-  }
-
-  private void buildModified(Build build) {
-    if (Boolean.TRUE.equals(build.getStatus().getCancelled())) {
-      Job job = getJobFromBuild(build);
-      if (job != null) {
-        JenkinsUtils.cancelBuild(job, build);
-      }
     }
   }
 
@@ -194,15 +175,5 @@ public class BuildWatcher implements Watcher<Build> {
     }
   }
 
-  private Job getJobFromBuild(Build build) {
-    String buildConfigName = build.getStatus().getConfig().getName();
-    if (StringUtils.isEmpty(buildConfigName)) {
-      return null;
-    }
-    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
-    if (buildConfig == null) {
-      return null;
-    }
-    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-  }
+
 }

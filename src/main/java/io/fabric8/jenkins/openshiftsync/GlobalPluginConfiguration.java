@@ -21,15 +21,11 @@ import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
-import java.util.logging.Logger;
-
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 @Extension
 public class GlobalPluginConfiguration extends GlobalConfiguration {
-
-  private static final Logger logger = Logger.getLogger(GlobalPluginConfiguration.class.getName());
 
   private boolean enabled = true;
 
@@ -37,7 +33,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private String namespace;
 
-  private transient BuildWatcher buildWatcher;
+  private transient NewBuildWatcher newBuildWatcher;
+
+  private transient CancelledBuildWatcher cancelledBuildWatcher;
 
   private transient BuildConfigWatcher buildConfigWatcher;
 
@@ -96,17 +94,15 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   }
 
   private void configChange() {
-    if (namespace == null) {
-      namespace = System.getenv("KUBERNETES_NAMESPACE");
-    }
-    logger.info("using default kubernetes namespace: " + namespace);
-
     if (!enabled) {
       if (buildConfigWatcher != null) {
         buildConfigWatcher.stop();
       }
-      if (buildWatcher != null) {
-        buildWatcher.stop();
+      if (newBuildWatcher != null) {
+        newBuildWatcher.stop();
+      }
+      if (cancelledBuildWatcher != null) {
+        cancelledBuildWatcher.stop();
       }
       OpenShiftUtils.shutdownOpenShiftClient();
       return;
@@ -115,12 +111,12 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       OpenShiftUtils.initializeOpenShiftClient(server);
       this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
 
-      buildWatcher = new BuildWatcher(namespace);
-      buildWatcher.start();
+      newBuildWatcher = new NewBuildWatcher(namespace);
+      newBuildWatcher.start();
+      cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
+      cancelledBuildWatcher.start();
       buildConfigWatcher = new BuildConfigWatcher(namespace);
       buildConfigWatcher.start();
-
-
     }
   }
 

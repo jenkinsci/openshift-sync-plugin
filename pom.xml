@@ -26,8 +26,8 @@
     <version>2.3</version>
     <relativePath/>
   </parent>
-  <groupId>io.fabric8</groupId>
-  <artifactId>openshift-jenkins-sync-plugin</artifactId>
+  <groupId>io.fabric8.jenkins.plugins</groupId>
+  <artifactId>openshift-sync</artifactId>
   <version>0.1-SNAPSHOT</version>
   <packaging>hpi</packaging>
 
