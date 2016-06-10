@@ -66,7 +66,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
     } else {
       buildConfigs = getOpenShiftClient().buildConfigs().inAnyNamespace().list();
-      buildConfigWatch = getOpenShiftClient().buildConfigs().inAnyNamespace().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
+      buildConfigWatch = getOpenShiftClient().buildConfigs().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
     }
 
     // lets process the initial state

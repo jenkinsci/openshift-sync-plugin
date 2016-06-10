@@ -25,6 +25,7 @@ import hudson.util.XStream2;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
+import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
@@ -32,6 +33,7 @@ import java.util.logging.Logger;
 
 import static hudson.model.Result.ABORTED;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 /**
  */
@@ -104,12 +106,12 @@ public class JenkinsUtils {
             Executor e = b.getExecutor();
             if (e != null) {
               e.interrupt(ABORTED);
-              cancelOpenShiftBuild(build);
-              return;
+              break;
             }
           }
         }
       }
+      cancelOpenShiftBuild(build);
     }
   }
 
@@ -119,5 +121,17 @@ public class JenkinsUtils {
     xs.addCompatibilityAlias(BuildConfig.class.getName(), BuildConfig.class);
     xs.addCompatibilityAlias("OpenShiftBuildConfig", BuildConfig.class);
     return xs;
+  }
+
+  public static Job getJobFromBuild(Build build) {
+    String buildConfigName = build.getStatus().getConfig().getName();
+    if (StringUtils.isEmpty(buildConfigName)) {
+      return null;
+    }
+    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    if (buildConfig == null) {
+      return null;
+    }
+    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
   }
 }
