@@ -26,9 +26,6 @@ import hudson.model.listeners.RunListener;
 import io.fabric8.openshift.api.model.Build;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
-import org.joda.time.DateTime;
-import org.joda.time.format.DateTimeFormatter;
-import org.joda.time.format.ISODateTimeFormat;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
@@ -112,11 +109,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
     if (shouldPollRun(run)) {
       try {
         BuildCause cause = (BuildCause) run.getCause(BuildCause.class);
-        if (cause != null && cause.getBuild() != null) {
+        if (cause != null) {
           // TODO This should be a link to the OpenShift console.
-          run.setDescription(
-            cause.getBuild().getMetadata().getNamespace() + "/" + cause.getBuild().getMetadata().getName()
-          );
+          run.setDescription(cause.getShortDescription());
         }
       } catch (IOException e) {
         logger.log(Level.WARNING, "Cannot set build description: " + e);
@@ -195,16 +190,12 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
 
     BuildCause cause = (BuildCause) run.getCause(BuildCause.class);
-    if (cause == null || cause.getBuild() == null) {
+    if (cause == null) {
       return;
     }
 
-    final Build build = cause.getBuild();
-
     String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), defaultNamespace);
     String logsUrl = joinPaths(rootUrl, run.getUrl(), "/consoleText");
-
-    String name = build.getMetadata().getName();
 
     String phase = runToBuildPhase(run);
 
@@ -220,12 +211,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
       }
     }
 
-    if (logger.isLoggable(Level.FINE)) {
-      logger.fine("generated build in namespace " + defaultNamespace + " with name: " + name + " phase: " + build.getStatus().getPhase() + " data: " + build);
-    }
-
-    logger.info("replacing build in namespace " + defaultNamespace + " with name: " + name + " phase: " + build.getStatus().getPhase());
-    getOpenShiftClient().builds().inNamespace(defaultNamespace).withName(name).edit()
+    logger.info("Patching build in namespace " + cause.getNamespace() + " with name: " + cause.getName() + " phase: " + phase);
+    getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
       .editMetadata()
         .addToAnnotations(ANNOTATION_JENKINS_STATUS_JSON, json)
         .addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, run.getUrl())

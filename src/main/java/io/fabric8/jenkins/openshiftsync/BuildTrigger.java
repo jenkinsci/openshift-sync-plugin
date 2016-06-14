@@ -48,7 +48,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
       return;
     }
 
-    DESCRIPTOR.addBuildConfigTrigger(buildConfigProjectProperty.getBuildConfig().getMetadata().getUid(), super.job);
+    DESCRIPTOR.addBuildConfigTrigger(buildConfigProjectProperty.getBuildConfigUid(), super.job);
   }
 
   @Override

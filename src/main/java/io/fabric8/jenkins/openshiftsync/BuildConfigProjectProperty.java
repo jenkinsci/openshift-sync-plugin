@@ -21,10 +21,9 @@ import hudson.model.JobProperty;
 import hudson.model.JobPropertyDescriptor;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.ParameterizedJobMixIn;
-import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 
-import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.xstream2;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 /**
  * Stores the OpenShift Build Config related project properties.
@@ -35,29 +34,38 @@ import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.xstream2;
  */
 public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
-  // The build config this job relates to.
-  private BuildConfig buildConfig;
+  // The build config uid this job relates to.
+  private String uid;
+
+  private String namespace;
+
+  private String name;
 
   @DataBoundConstructor
-  public BuildConfigProjectProperty(String buildConfigAsXML) {
-    if (StringUtils.isNotBlank(buildConfigAsXML)) {
-      this.buildConfig = (BuildConfig) xstream2().fromXML(buildConfigAsXML);
-    }
+  public BuildConfigProjectProperty(String namespace, String name, String uid) {
+    this.namespace = namespace;
+    this.name = name;
+    this.uid = uid;
   }
 
-  public BuildConfigProjectProperty(BuildConfig buildConfig) {
-    this.buildConfig = buildConfig;
+  public String getBuildConfigUid() {
+    return uid;
   }
 
   public BuildConfig getBuildConfig() {
-    return buildConfig;
+    BuildConfig bc = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(name).get();
+    if (bc != null && bc.getMetadata().getUid().equals(uid)) {
+      return bc;
+    }
+    return null;
   }
 
-  public String getBuildConfigAsXML() {
-    if (buildConfig == null) {
-      return null;
-    }
-    return xstream2().toXML(buildConfig);
+  public String getName() {
+    return name;
+  }
+
+  public String getNamespace() {
+    return namespace;
   }
 
   @Extension
