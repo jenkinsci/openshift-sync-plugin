@@ -16,41 +16,84 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Cause;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.Build;
-import io.fabric8.openshift.api.model.BuildSource;
-import io.fabric8.openshift.api.model.BuildSpec;
+import io.fabric8.openshift.api.model.GitBuildSource;
 import org.apache.commons.lang.StringUtils;
 
 public class BuildCause extends Cause {
 
-  private final Build build;
+  private String uid;
 
-  public BuildCause(Build build) {
-    this.build = build;
+  private String namespace;
+
+  private String name;
+
+  private String gitUri;
+
+  private String commit;
+
+  public BuildCause(String uid, String namespace, String name, String gitUri, String commit) {
+    this.uid = uid;
+    this.namespace = namespace;
+    this.name = name;
+    this.gitUri = gitUri;
+    this.commit = commit;
   }
 
-  public Build getBuild() {
-    return build;
+  public BuildCause(Build build) {
+    if (build == null || build.getMetadata() == null) {
+      return;
+    }
+    ObjectMeta meta = build.getMetadata();
+    uid = meta.getUid();
+    namespace = meta.getNamespace();
+    name = meta.getName();
+
+    if (build.getSpec() != null) {
+      if (build.getSpec().getSource() != null && build.getSpec().getSource().getGit() != null) {
+        GitBuildSource git = build.getSpec().getSource().getGit();
+        gitUri = git.getUri();
+      }
+
+      if (build.getSpec().getRevision() != null && build.getSpec().getRevision().getGit() != null) {
+        commit = build.getSpec().getRevision().getGit().getCommit();
+      }
+    }
   }
 
   @Override
   public String getShortDescription() {
     StringBuilder sb = new StringBuilder("OpenShift Build ")
-      .append(build.getMetadata().getNamespace()).append("/").append(build.getMetadata().getName());
+      .append(namespace).append("/").append(name);
 
-    BuildSpec spec = build.getSpec();
-    if (spec != null) {
-      BuildSource source = spec.getSource();
-      if (source != null && source.getGit() != null && StringUtils.isNotBlank(source.getGit().getUri())) {
-        sb.append(" from ").append(source.getGit().getUri());
-        if (spec.getRevision() != null
-          && spec.getRevision().getGit() != null
-          && StringUtils.isNotBlank(spec.getRevision().getGit().getCommit())) {
-          sb.append(", commit ").append(spec.getRevision().getGit().getCommit());
-        }
+    if (StringUtils.isNotBlank(gitUri)) {
+      sb.append(" from ").append(gitUri);
+      if (StringUtils.isNotBlank(commit)) {
+        sb.append(", commit ").append(commit);
       }
     }
 
     return sb.toString();
+  }
+
+  public String getUid() {
+    return uid;
+  }
+
+  public String getNamespace() {
+    return namespace;
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public String getGitUri() {
+    return gitUri;
+  }
+
+  public String getCommit() {
+    return commit;
   }
 }

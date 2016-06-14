@@ -21,7 +21,6 @@ import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
-import hudson.util.XStream2;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
@@ -91,7 +90,7 @@ public class JenkinsUtils {
       Queue buildQueue = jenkins.getQueue();
       for (Queue.Item item : buildQueue.getItems()) {
         for (Cause cause : item.getCauses()) {
-          if (cause instanceof BuildCause && ((BuildCause) cause).getBuild().getMetadata().getUid().equals(buildUid)) {
+          if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
             buildQueue.cancel(item);
             cancelOpenShiftBuild(build);
             return;
@@ -102,7 +101,7 @@ public class JenkinsUtils {
         if (obj instanceof WorkflowRun) {
           WorkflowRun b = (WorkflowRun) obj;
           BuildCause cause = b.getCause(BuildCause.class);
-          if (cause != null && cause.getBuild().getMetadata().getUid().equals(buildUid)) {
+          if (cause != null && cause.getUid().equals(buildUid)) {
             Executor e = b.getExecutor();
             if (e != null) {
               e.interrupt(ABORTED);
@@ -113,14 +112,6 @@ public class JenkinsUtils {
       }
       cancelOpenShiftBuild(build);
     }
-  }
-
-  public static XStream2 xstream2() {
-    XStream2 xs = new XStream2();
-    xs.aliasType("OpenShiftBuildConfig", BuildConfig.class);
-    xs.addCompatibilityAlias(BuildConfig.class.getName(), BuildConfig.class);
-    xs.addCompatibilityAlias("OpenShiftBuildConfig", BuildConfig.class);
-    return xs;
   }
 
   public static Job getJobFromBuild(Build build) {
