@@ -103,7 +103,7 @@ public class BuildConfigToJobMapper {
         return null;
       }
     } else {
-      job.setDefinition(new CpsFlowDefinition(jenkinsfile));
+      job.setDefinition(new CpsFlowDefinition(jenkinsfile, true));
     }
 
     job.addTrigger(new BuildTrigger());
