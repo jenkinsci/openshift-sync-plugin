@@ -107,6 +107,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   public void stop() {
     if (buildConfigWatch != null) {
       buildConfigWatch.close();
+      buildConfigWatch = null;
     }
   }
 
@@ -119,13 +120,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         stop();
         start();
       }
-    }
-  }
-
-  @Override
-  public void errorReceived(Status status) {
-    if (status != null) {
-      logger.warning("Watch error received: " + status.toString());
     }
   }
 
