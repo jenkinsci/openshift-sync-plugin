@@ -24,12 +24,10 @@ import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildList;
 
-import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
@@ -56,6 +54,7 @@ public class CancelledBuildWatcher implements Watcher<Build> {
   public void stop() {
     if (buildsWatch != null) {
       buildsWatch.close();
+      buildsWatch = null;
     }
   }
 
@@ -82,13 +81,6 @@ public class CancelledBuildWatcher implements Watcher<Build> {
       }
     } catch (Exception e) {
       logger.log(Level.WARNING, "Caught: " + e, e);
-    }
-  }
-
-  @Override
-  public void errorReceived(Status status) {
-    if (status != null) {
-      logger.warning("Watch error received: " + status.toString());
     }
   }
 

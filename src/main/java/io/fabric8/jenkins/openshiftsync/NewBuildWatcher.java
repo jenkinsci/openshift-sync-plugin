@@ -98,6 +98,7 @@ public class NewBuildWatcher implements Watcher<Build> {
   public void stop() {
     if (buildsWatch != null) {
       buildsWatch.close();
+      buildsWatch = null;
     }
   }
 
@@ -152,13 +153,6 @@ public class NewBuildWatcher implements Watcher<Build> {
       }
     } catch (Exception e) {
       logger.log(Level.WARNING, "Caught: " + e, e);
-    }
-  }
-
-  @Override
-  public void errorReceived(Status status) {
-    if (status != null) {
-      logger.warning("Watch error received: " + status.toString());
     }
   }
 
