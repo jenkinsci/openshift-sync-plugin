@@ -48,7 +48,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
       return;
     }
 
-    DESCRIPTOR.addBuildConfigTrigger(buildConfigProjectProperty.getBuildConfigUid(), super.job);
+    DESCRIPTOR.addBuildConfigTrigger(buildConfigProjectProperty.getUid(), super.job);
   }
 
   @Override
@@ -58,7 +58,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
     if (super.job != null) {
       this.buildConfigProjectProperty = super.job.getProperty(BuildConfigProjectProperty.class);
       if (this.buildConfigProjectProperty != null) {
-        String buildConfigUid = this.buildConfigProjectProperty.getBuildConfigUid();
+        String buildConfigUid = this.buildConfigProjectProperty.getUid();
         if (!StringUtils.isEmpty(buildConfigUid)) {
           DESCRIPTOR.removeBuildConfigTrigger(buildConfigUid, super.job);
         }
