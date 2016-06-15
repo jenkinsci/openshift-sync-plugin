@@ -262,8 +262,12 @@ public class OpenShiftUtils {
   }
 
   public static long parseResourceVersion(HasMetadata obj) {
+    return parseResourceVersion(obj.getMetadata().getResourceVersion());
+  }
+
+  public static long parseResourceVersion(String resourceVersion) {
     try {
-      return Long.parseLong(obj.getMetadata().getResourceVersion());
+      return Long.parseLong(resourceVersion);
     } catch (NumberFormatException e) {
       return 0;
     }

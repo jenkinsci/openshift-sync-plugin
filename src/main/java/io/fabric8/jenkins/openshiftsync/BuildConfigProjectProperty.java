@@ -41,11 +41,14 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   private String name;
 
+  private String resourceVersion;
+
   @DataBoundConstructor
-  public BuildConfigProjectProperty(String namespace, String name, String uid) {
+  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion) {
     this.namespace = namespace;
     this.name = name;
     this.uid = uid;
+    this.resourceVersion = resourceVersion;
   }
 
   public String getBuildConfigUid() {
@@ -66,6 +69,10 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   public String getNamespace() {
     return namespace;
+  }
+
+  public String getResourceVersion() {
+    return resourceVersion;
   }
 
   @Extension
