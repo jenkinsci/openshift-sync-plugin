@@ -39,9 +39,9 @@ def release(project){
     stagedProject = project
     useGitTagForNextVersion = true
     helmPush = false
-    groupId = 'io.fabric8'
+    groupId = 'io.fabric8.jenkins.plugins'
     githubOrganisation = 'fabric8io'
-    artifactIdToWatchInCentral = 'openshift-jenkins-sync-plugin'
+    artifactIdToWatchInCentral = 'openshift-sync'
     artifactExtensionToWatchInCentral = 'jar'
     extraImagesToTag = null
   }
