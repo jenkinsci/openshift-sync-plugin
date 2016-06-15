@@ -20,7 +20,6 @@ import hudson.model.Action;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Queue;
-import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildRequestBuilder;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
@@ -37,17 +36,14 @@ public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
       WorkflowJob wj = (WorkflowJob) p;
       BuildConfigProjectProperty buildConfigProjectProperty = wj.getProperty(BuildConfigProjectProperty.class);
       if (buildConfigProjectProperty != null) {
-        BuildConfig buildConfig = buildConfigProjectProperty.getBuildConfig();
-        if (buildConfig != null) {
-          getOpenShiftClient().buildConfigs()
-            .inNamespace(buildConfig.getMetadata().getNamespace()).withName(buildConfig.getMetadata().getName())
-            .instantiate(
-              new BuildRequestBuilder()
-                .withNewMetadata().withName(buildConfig.getMetadata().getName()).endMetadata()
-                .build()
-            );
-          return false;
-        }
+        getOpenShiftClient().buildConfigs()
+          .inNamespace(buildConfigProjectProperty.getNamespace()).withName(buildConfigProjectProperty.getName())
+          .instantiate(
+            new BuildRequestBuilder()
+              .withNewMetadata().withName(buildConfigProjectProperty.getName()).endMetadata()
+              .build()
+          );
+        return false;
       }
     }
 

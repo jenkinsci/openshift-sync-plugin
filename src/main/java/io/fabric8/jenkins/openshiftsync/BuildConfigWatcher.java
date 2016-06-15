@@ -172,8 +172,8 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             new BuildConfigProjectProperty(
               buildConfig.getMetadata().getNamespace(),
               buildConfig.getMetadata().getName(),
-              buildConfig.getMetadata().getUid()
-            )
+              buildConfig.getMetadata().getUid(),
+              buildConfig.getMetadata().getResourceVersion())
           );
 
           InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
@@ -190,7 +190,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             BuildConfigProjectProperty buildConfigProjectProperty = (BuildConfigProjectProperty) job.getProperty(BuildConfigProjectProperty.class);
             if (buildConfigProjectProperty != null) {
               long updatedBCResourceVersion = parseResourceVersion(buildConfig);
-              long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getBuildConfig());
+              long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
               if (oldBCResourceVersion > updatedBCResourceVersion) {
                 return null;
               }

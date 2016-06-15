@@ -27,7 +27,6 @@ import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.updateBuildConfigFromJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isResourceWithoutStateEqual;
 
 /**
  * Listens to {@link WorkflowJob} objects being updated via the web console or Jenkins REST API and replicating
@@ -97,27 +96,21 @@ public class PipelineJobListener extends ItemListener {
   // TODO handle syncing created jobs back to a new OpenShift BuildConfig
   private void upsertBuildConfigForJob(WorkflowJob job) {
     BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
-    if (buildConfigProjectProperty == null || buildConfigProjectProperty.getBuildConfig() == null) {
+    if (buildConfigProjectProperty == null || buildConfigProjectProperty.getNamespace() == null || buildConfigProjectProperty.getName() == null || buildConfigProjectProperty.getBuildConfigUid() == null) {
       return;
     }
 
     BuildConfig jobBuildConfig = buildConfigProjectProperty.getBuildConfig();
-    updateBuildConfigFromJob(job, jobBuildConfig);
-
-    BuildConfig serverBuildConfig = getOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).get();
-    if (serverBuildConfig == null) {
-      logger.log(Level.WARNING, "Failed to find BuildConfig in namespace: " + jobBuildConfig.getMetadata().getNamespace() + " for name: " + jobBuildConfig.getMetadata().getName());
+    if (jobBuildConfig == null) {
+      logger.log(Level.WARNING, "Failed to find BuildConfig in namespace: " + buildConfigProjectProperty.getNamespace() + " for name: " + buildConfigProjectProperty.getName());
       return;
     }
+    updateBuildConfigFromJob(job, jobBuildConfig);
 
-    if (jobBuildConfig.getMetadata().getResourceVersion().equals(serverBuildConfig.getMetadata().getResourceVersion())
-      && !isResourceWithoutStateEqual(serverBuildConfig, jobBuildConfig)) {
-      logger.log(Level.INFO, "Updating BuildConfig in namespace: " + jobBuildConfig.getMetadata().getNamespace() + " with name: " + jobBuildConfig.getMetadata().getName());
-      try {
-        getOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).replace(jobBuildConfig);
-      } catch (Exception e) {
-        logger.log(Level.WARNING, "Failed to update BuildConfig: " + NamespaceName.create(jobBuildConfig) + ". " + e, e);
-      }
+    try {
+      getOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).replace(jobBuildConfig);
+    } catch (Exception e) {
+      logger.log(Level.WARNING, "Failed to update BuildConfig: " + NamespaceName.create(jobBuildConfig) + ". " + e, e);
     }
   }
 }

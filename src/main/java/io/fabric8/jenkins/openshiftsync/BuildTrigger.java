@@ -58,7 +58,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
     if (super.job != null) {
       this.buildConfigProjectProperty = super.job.getProperty(BuildConfigProjectProperty.class);
       if (this.buildConfigProjectProperty != null) {
-        String buildConfigUid = this.buildConfigProjectProperty.getBuildConfig().getMetadata().getUid();
+        String buildConfigUid = this.buildConfigProjectProperty.getBuildConfigUid();
         if (!StringUtils.isEmpty(buildConfigUid)) {
           DESCRIPTOR.removeBuildConfigTrigger(buildConfigUid, super.job);
         }
