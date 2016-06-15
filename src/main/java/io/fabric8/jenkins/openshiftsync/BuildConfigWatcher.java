@@ -168,12 +168,19 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             return null;
           }
 
+          String contextDir = null;
+          if (buildConfig.getSpec() != null && buildConfig.getSpec().getSource() != null) {
+            contextDir = buildConfig.getSpec().getSource().getContextDir();
+          }
+
           jobFromBuildConfig.addProperty(
             new BuildConfigProjectProperty(
               buildConfig.getMetadata().getNamespace(),
               buildConfig.getMetadata().getName(),
               buildConfig.getMetadata().getUid(),
-              buildConfig.getMetadata().getResourceVersion())
+              buildConfig.getMetadata().getResourceVersion(),
+              contextDir
+            )
           );
 
           InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));

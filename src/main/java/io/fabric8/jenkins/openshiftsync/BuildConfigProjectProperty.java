@@ -43,15 +43,28 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   private String resourceVersion;
 
+  private String contextDir;
+
   @DataBoundConstructor
-  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion) {
+  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion, String contextDir) {
     this.namespace = namespace;
     this.name = name;
     this.uid = uid;
     this.resourceVersion = resourceVersion;
+    this.contextDir = contextDir;
   }
 
-  public String getBuildConfigUid() {
+  public BuildConfigProjectProperty(BuildConfig bc) {
+    this(
+      bc.getMetadata().getNamespace(),
+      bc.getMetadata().getName(),
+      bc.getMetadata().getUid(),
+      bc.getMetadata().getResourceVersion(),
+      bc.getSpec().getSource().getContextDir()
+    );
+  }
+
+  public String getUid() {
     return uid;
   }
 
@@ -75,10 +88,12 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     return resourceVersion;
   }
 
+  public String getContextDir() {
+    return contextDir;
+  }
+
   @Extension
   public static final class DescriptorImpl extends JobPropertyDescriptor {
-    public static final String OPENSHIFT_BUILDCONFIG_BLOCK_NAME = "openshiftBuildConfig";
-
     public boolean isApplicable(Class<? extends Job> jobType) {
       return ParameterizedJobMixIn.ParameterizedJob.class.isAssignableFrom(jobType);
     }

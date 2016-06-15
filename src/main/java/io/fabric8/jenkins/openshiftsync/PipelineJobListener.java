@@ -96,7 +96,7 @@ public class PipelineJobListener extends ItemListener {
   // TODO handle syncing created jobs back to a new OpenShift BuildConfig
   private void upsertBuildConfigForJob(WorkflowJob job) {
     BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
-    if (buildConfigProjectProperty == null || buildConfigProjectProperty.getNamespace() == null || buildConfigProjectProperty.getName() == null || buildConfigProjectProperty.getBuildConfigUid() == null) {
+    if (buildConfigProjectProperty == null || buildConfigProjectProperty.getNamespace() == null || buildConfigProjectProperty.getName() == null || buildConfigProjectProperty.getUid() == null) {
       return;
     }
 

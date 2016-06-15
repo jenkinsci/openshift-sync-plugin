@@ -28,6 +28,7 @@ import io.fabric8.openshift.api.model.BuildStrategy;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import jenkins.model.Jenkins;
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
@@ -139,6 +140,11 @@ public class BuildConfigToJobMapper {
       CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
       String scriptPath = cpsScmFlowDefinition.getScriptPath();
       if (scriptPath != null && scriptPath.trim().length() > 0) {
+        String bcContextDir = buildConfig.getSpec().getSource().getContextDir();
+        if (StringUtils.isNotBlank(bcContextDir) && scriptPath.startsWith(bcContextDir)) {
+          scriptPath = scriptPath.replaceFirst("^" + bcContextDir + "/?", "");
+        }
+
         jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
 
         SCM scm = cpsScmFlowDefinition.getScm();
@@ -152,6 +158,7 @@ public class BuildConfigToJobMapper {
               URIish urIish = urIs.get(0);
               String gitUrl = urIish.toString();
               if (gitUrl != null && gitUrl.length() > 0) {
+                String ref = null;
                 List<BranchSpec> branches = gitSCM.getBranches();
                 if (branches != null && branches.size() > 0) {
                   BranchSpec branchSpec = branches.get(0);
@@ -159,8 +166,10 @@ public class BuildConfigToJobMapper {
                   while (branch.startsWith("*") || branch.startsWith("/")) {
                     branch = branch.substring(1);
                   }
+                  if (!branch.isEmpty()) {
+                    ref = branch;
+                  }
                 }
-                String ref = null;
                 OpenShiftUtils.updateGitSourceUrl(buildConfig, gitUrl, ref);
               }
             }
