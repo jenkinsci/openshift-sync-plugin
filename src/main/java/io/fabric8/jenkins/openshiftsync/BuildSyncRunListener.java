@@ -55,7 +55,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   private static final Logger logger = Logger.getLogger(BuildSyncRunListener.class.getName());
 
-  private long pollPeriodMs = 2000;
+  private long pollPeriodMs = 1000;
   private String defaultNamespace;
 
   private transient Set<Run> runsToPoll = new CopyOnWriteArraySet<>();
@@ -102,7 +102,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   @Override
-  public void onStarted(Run run, TaskListener listener) {
+  public synchronized void onStarted(Run run, TaskListener listener) {
     if (shouldPollRun(run)) {
       try {
         BuildCause cause = (BuildCause) run.getCause(BuildCause.class);
@@ -113,10 +113,10 @@ public class BuildSyncRunListener extends RunListener<Run> {
       } catch (IOException e) {
         logger.log(Level.WARNING, "Cannot set build description: " + e);
       }
-      checkTimerStarted();
       if (runsToPoll.add(run)) {
         logger.info("starting polling build " + run.getUrl());
       }
+      checkTimerStarted();
     } else {
       logger.fine("not polling polling build " + run.getUrl() + " as its not a WorkflowJob");
     }
@@ -136,7 +136,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   @Override
-  public void onCompleted(Run run, @Nonnull TaskListener listener) {
+  public synchronized void onCompleted(Run run, @Nonnull TaskListener listener) {
     runsToPoll.remove(run);
     pollRun(run);
     logger.info("onCompleted " + run.getUrl());
@@ -144,7 +144,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   @Override
-  public void onDeleted(Run run) {
+  public synchronized void onDeleted(Run run) {
     runsToPoll.remove(run);
     pollRun(run);
     logger.info("onDeleted " + run.getUrl());
@@ -154,13 +154,13 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   @Override
-  public void onFinalized(Run run) {
+  public synchronized void onFinalized(Run run) {
     pollRun(run);
     logger.info("onFinalized " + run.getUrl());
     super.onFinalized(run);
   }
 
-  protected void pollLoop() {
+  protected synchronized void pollLoop() {
     for (Run run : runsToPoll) {
       pollRun(run);
     }
