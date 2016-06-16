@@ -27,6 +27,8 @@ public class JoinPathsTest {
     assertJoinPaths("http://localhost:8080/job/cheese/12/wfapi/describe", "http://localhost:8080/", "job/cheese/12/", "/wfapi/describe");
     assertJoinPaths("http://localhost:8080/job/cheese/12/wfapi/describe", "http://localhost:8080/", "/job/cheese/12/", "/wfapi/describe");
     assertJoinPaths("http://localhost:8080/job/cheese/12/wfapi/describe", "http://localhost:8080", "job/cheese/12/", "wfapi/describe");
+    assertJoinPaths("http://localhost:8080/job/cheese/12/wfapi/describe", "http://localhost:8080", "job/cheese/12/", "wfapi/describe");
+    assertJoinPaths("http://localhost:8080/job/cheese/12/wfapi/describe", "http://localhost:8080", "//job/cheese/12/", "wfapi/describe");
   }
 
   private void assertJoinPaths(String expected, String... strings) {
