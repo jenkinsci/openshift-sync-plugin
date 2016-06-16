@@ -19,6 +19,7 @@ import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.listeners.ItemListener;
 import io.fabric8.openshift.api.model.BuildConfig;
+import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.kohsuke.stapler.DataBoundConstructor;
 
@@ -72,15 +73,20 @@ public class PipelineJobListener extends ItemListener {
     super.onDeleted(item);
     if (item instanceof WorkflowJob) {
       WorkflowJob job = (WorkflowJob) item;
-      NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), defaultNamespace);
-      logger.info("Deleting BuildConfig " + buildName);
+      if (job.getProperty(BuildConfigProjectProperty.class) != null
+        && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getNamespace())
+        && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getName())) {
 
-      String namespace = buildName.getNamespace();
-      String buildConfigName = buildName.getName();
-      try {
-        getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).delete();
-      } catch (Exception e) {
-        logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace + " for name: " + buildConfigName);
+        NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), defaultNamespace);
+        logger.info("Deleting BuildConfig " + buildName);
+
+        String namespace = buildName.getNamespace();
+        String buildConfigName = buildName.getName();
+        try {
+          getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).delete();
+        } catch (Exception e) {
+          logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace + " for name: " + buildConfigName);
+        }
       }
     }
   }
@@ -88,8 +94,12 @@ public class PipelineJobListener extends ItemListener {
   public void upsertItem(Item item) {
     if (item instanceof WorkflowJob) {
       WorkflowJob job = (WorkflowJob) item;
-      logger.info("Updated WorkflowJob " + job.getDisplayName() + " replicating changes to OpenShift");
-      upsertBuildConfigForJob(job);
+      if (job.getProperty(BuildConfigProjectProperty.class) != null
+        && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getNamespace())
+        && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getName())) {
+        logger.info("Updated WorkflowJob " + job.getDisplayName() + " replicating changes to OpenShift");
+        upsertBuildConfigForJob(job);
+      }
     }
   }
 
