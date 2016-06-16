@@ -21,6 +21,7 @@ import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Queue;
 import io.fabric8.openshift.api.model.BuildRequestBuilder;
+import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.util.List;
@@ -35,7 +36,9 @@ public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
     if (p instanceof WorkflowJob && !isOpenShiftBuildCause(actions)) {
       WorkflowJob wj = (WorkflowJob) p;
       BuildConfigProjectProperty buildConfigProjectProperty = wj.getProperty(BuildConfigProjectProperty.class);
-      if (buildConfigProjectProperty != null) {
+      if (buildConfigProjectProperty != null
+        && StringUtils.isNotBlank(buildConfigProjectProperty.getNamespace())
+        && StringUtils.isNotBlank(buildConfigProjectProperty.getName())) {
         getOpenShiftClient().buildConfigs()
           .inNamespace(buildConfigProjectProperty.getNamespace()).withName(buildConfigProjectProperty.getName())
           .instantiate(
