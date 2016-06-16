@@ -15,7 +15,10 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import com.cloudbees.workflow.rest.external.AtomFlowNodeExt;
+import com.cloudbees.workflow.rest.external.FlowNodeExt;
 import com.cloudbees.workflow.rest.external.RunExt;
+import com.cloudbees.workflow.rest.external.StageNodeExt;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import hudson.Extension;
@@ -77,27 +80,21 @@ public class BuildSyncRunListener extends RunListener<Run> {
    * @return the strings concatenated together with / while avoiding a double // between non blank strings.
    */
   public static String joinPaths(String... strings) {
-    StringBuilder buffer = new StringBuilder();
-    for (String string : strings) {
-      if (string == null) {
-        continue;
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < strings.length; i++) {
+      sb.append(strings[i]);
+      if (i < strings.length - 1) {
+        sb.append("/");
       }
-      if (buffer.length() > 0) {
-        boolean bufferEndsWithSeparator = buffer.toString().endsWith("/");
-        boolean stringStartsWithSeparator = string.startsWith("/");
-        if (bufferEndsWithSeparator) {
-          if (stringStartsWithSeparator) {
-            string = string.substring(1);
-          }
-        } else {
-          if (!stringStartsWithSeparator) {
-            buffer.append("/");
-          }
-        }
-      }
-      buffer.append(string);
     }
-    return buffer.toString();
+    String joined = sb.toString();
+
+    // And normalize it...
+    return joined
+      .replaceAll("/+", "/")
+      .replaceAll("/\\?", "?")
+      .replaceAll("/#", "#")
+      .replaceAll(":/", "://");
   }
 
   private void init() {
@@ -176,15 +173,10 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
     RunExt wfRunExt = RunExt.create((WorkflowRun) run);
 
-    try {
-      String json = new ObjectMapper().writeValueAsString(wfRunExt);
-      upsertBuild(run, json);
-    } catch (JsonProcessingException e) {
-      logger.log(Level.WARNING, "Failed to serialize workflow run. " + e, e);
-    }
+    upsertBuild(run, wfRunExt);
   }
 
-  private void upsertBuild(Run run, String json) {
+  private void upsertBuild(Run run, RunExt wfRunExt) {
     if (run == null) {
       return;
     }
@@ -195,7 +187,38 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
 
     String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), defaultNamespace);
-    String logsUrl = joinPaths(rootUrl, run.getUrl(), "/consoleText");
+    String buildUrl = joinPaths(rootUrl, run.getUrl());
+    String logsUrl = joinPaths(buildUrl, "/consoleText");
+
+    if (!wfRunExt.get_links().self.href.matches("^https?://.*$")) {
+      wfRunExt.get_links().self.setHref(joinPaths(rootUrl, wfRunExt.get_links().self.href));
+    }
+    for (StageNodeExt stage : wfRunExt.getStages()) {
+      FlowNodeExt.FlowNodeLinks links = stage.get_links();
+      if (!links.self.href.matches("^https?://.*$")) {
+        links.self.setHref(joinPaths(rootUrl, links.self.href));
+      }
+      if (links.getLog() != null && !links.getLog().href.matches("^https?://.*$")) {
+        links.getLog().setHref(joinPaths(rootUrl, links.getLog().href));
+      }
+      for (AtomFlowNodeExt node : stage.getStageFlowNodes()) {
+        FlowNodeExt.FlowNodeLinks nodeLinks = node.get_links();
+        if (!nodeLinks.self.href.matches("^https?://.*$")) {
+          nodeLinks.self.setHref(joinPaths(rootUrl, nodeLinks.self.href));
+        }
+        if (nodeLinks.getLog() != null && !nodeLinks.getLog().href.matches("^https?://.*$")) {
+          nodeLinks.getLog().setHref(joinPaths(rootUrl, nodeLinks.getLog().href));
+        }
+      }
+    }
+
+    String json;
+    try {
+      json = new ObjectMapper().writeValueAsString(wfRunExt);
+    } catch (JsonProcessingException e) {
+      logger.log(Level.SEVERE, "Failed to serialize workflow run. " + e, e);
+      return;
+    }
 
     String phase = runToBuildPhase(run);
 
@@ -215,7 +238,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
     getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
       .editMetadata()
         .addToAnnotations(ANNOTATION_JENKINS_STATUS_JSON, json)
-        .addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, run.getUrl())
+        .addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, buildUrl)
         .addToAnnotations(ANNOTATION_JENKINS_LOG_URL, logsUrl)
       .endMetadata()
       .editStatus()

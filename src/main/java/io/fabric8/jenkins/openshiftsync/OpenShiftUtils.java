@@ -32,6 +32,7 @@ import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.Route;
+import io.fabric8.openshift.api.model.RouteList;
 import io.fabric8.openshift.api.model.RouteSpec;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
@@ -162,20 +163,23 @@ public class OpenShiftUtils {
    * Returns the public URL of the given service
    *
    * @param openShiftClient the OpenShiftClient to use
-   * @param protocolText the protocol text part of a URL such as <code>http://</code>
+   * @param defaultProtocolText the protocol text part of a URL such as <code>http://</code>
    * @param namespace the Kubernetes namespace
    * @param serviceName the service name
    * @return the external URL of the service
    */
-  public static String getExternalServiceUrl(OpenShiftClient openShiftClient, String protocolText, String namespace, String serviceName) {
+  public static String getExternalServiceUrl(OpenShiftClient openShiftClient, String defaultProtocolText, String namespace, String serviceName) {
     try {
-      Route route = openShiftClient.routes().inNamespace(namespace).withName(serviceName).get();
-      if (route != null) {
+      RouteList routes = openShiftClient.routes().inNamespace(namespace).list();
+      for (Route route : routes.getItems()) {
         RouteSpec spec = route.getSpec();
-        if (spec != null) {
+        if (spec != null && spec.getTo() != null && "Service".equalsIgnoreCase(spec.getTo().getKind()) && serviceName.equalsIgnoreCase(spec.getTo().getName())) {
           String host = spec.getHost();
           if (host != null && host.length() > 0) {
-            return protocolText + host;
+            if (spec.getTls() != null) {
+              return "https://" + host;
+            }
+            return "http://" + host;
           }
         }
       }
@@ -190,7 +194,7 @@ public class OpenShiftUtils {
         if (spec != null) {
           String host = spec.getPortalIP();
           if (host != null && host.length() > 0) {
-            return protocolText + host;
+            return defaultProtocolText + host;
           }
         }
       }
@@ -199,7 +203,7 @@ public class OpenShiftUtils {
     }
 
     // lets default to the service DNS name
-    return protocolText + serviceName;
+    return defaultProtocolText + serviceName;
   }
 
   /**
