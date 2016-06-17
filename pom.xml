@@ -48,7 +48,7 @@
 
   <name>OpenShift Sync</name>
   <description>Syncs OpenShift BuildConfigs with Jenkins jobs</description>
-  <url>http://fabric8.io</url>
+  <url>https://wiki.jenkins-ci.org/display/JENKINS/OpenShift+Sync+Plugin</url>
   <inceptionYear>2016</inceptionYear>
 
   <organization>
@@ -66,17 +66,18 @@
 
   <developers>
     <developer>
-      <id>geeks</id>
-      <name>Fabric8 Development Team</name>
+      <id>jimmi</id>
+      <name>Jimmi Dyson</name>
       <organization>fabric8</organization>
       <organizationUrl>http://fabric8.io/</organizationUrl>
+      <email>jimmidyson@gmail.com</email>
     </developer>
   </developers>
 
   <scm>
-    <connection>scm:git:git@github.com:fabric8io/${project.artifactId}.git</connection>
-    <developerConnection>scm:git:git@github.com:fabric8io/${project.artifactId}.git</developerConnection>
-    <url>http://github.com/fabric8io/${project.artifactId}/</url>
+    <connection>scm:git:git@github.com:jenkinsci/${project.artifactId}-plugin.git</connection>
+    <developerConnection>scm:git:git@github.com:jenkinsci/${project.artifactId}-plugin.git</developerConnection>
+    <url>http://github.com/jenkinsci/${project.artifactId}-plugin/</url>
     <tag>${project.version}</tag>
   </scm>
 
