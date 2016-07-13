@@ -137,26 +137,30 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   @Override
   public synchronized void onCompleted(Run run, @Nonnull TaskListener listener) {
-    runsToPoll.remove(run);
-    pollRun(run);
-    logger.info("onCompleted " + run.getUrl());
+    if (shouldPollRun(run)) {
+      runsToPoll.remove(run);
+      pollRun(run);
+      logger.info("onCompleted " + run.getUrl());
+    }
     super.onCompleted(run, listener);
   }
 
   @Override
   public synchronized void onDeleted(Run run) {
-    runsToPoll.remove(run);
-    pollRun(run);
-    logger.info("onDeleted " + run.getUrl());
+    if (shouldPollRun(run)) {
+      runsToPoll.remove(run);
+      pollRun(run);
+      logger.info("onDeleted " + run.getUrl());
+    }
     super.onDeleted(run);
-
-    // TODO should we remove the OpenShift Build too?
   }
 
   @Override
   public synchronized void onFinalized(Run run) {
-    pollRun(run);
-    logger.info("onFinalized " + run.getUrl());
+    if (shouldPollRun(run)) {
+      pollRun(run);
+      logger.info("onFinalized " + run.getUrl());
+    }
     super.onFinalized(run);
   }
 
