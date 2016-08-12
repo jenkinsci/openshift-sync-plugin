@@ -21,6 +21,8 @@ import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
+import java.util.concurrent.Callable;
+
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
@@ -111,12 +113,18 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       OpenShiftUtils.initializeOpenShiftClient(server);
       this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
 
-      newBuildWatcher = new NewBuildWatcher(namespace);
-      newBuildWatcher.start();
-      cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
-      cancelledBuildWatcher.start();
       buildConfigWatcher = new BuildConfigWatcher(namespace);
-      buildConfigWatcher.start();
+      buildConfigWatcher.start(new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          newBuildWatcher = new NewBuildWatcher(namespace);
+          newBuildWatcher.start();
+          cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
+          cancelledBuildWatcher.start();
+
+          return null;
+        }
+      });
     }
   }
 

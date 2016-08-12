@@ -35,6 +35,7 @@ import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -58,7 +59,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     this.namespace = defaultNamespace;
   }
 
-  public void start() {
+  public void start(final Callable<Void> completionCallback) {
     final BuildConfigList buildConfigs;
     if (namespace != null && !namespace.isEmpty()) {
       buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
@@ -97,6 +98,10 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
         }
+
+        if (completionCallback != null) {
+          Timer.get().schedule(completionCallback, 100, TimeUnit.MILLISECONDS);
+        }
       }
     };
     // lets give jenkins a while to get started ;)
@@ -117,7 +122,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
       if (e.getStatus() != null && e.getStatus().getCode() == HTTP_GONE) {
         stop();
-        start();
+        start(null);
       }
     }
   }
