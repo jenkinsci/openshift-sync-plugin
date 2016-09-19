@@ -16,18 +16,23 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.Extension;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import jenkins.model.GlobalConfiguration;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
 import java.util.concurrent.Callable;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 @Extension
 public class GlobalPluginConfiguration extends GlobalConfiguration {
+
+  private static final Logger logger = Logger.getLogger(GlobalPluginConfiguration.class.getName());
 
   private boolean enabled = true;
 
@@ -110,21 +115,29 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       return;
     }
     if (enabled) {
-      OpenShiftUtils.initializeOpenShiftClient(server);
-      this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
+      try {
+        OpenShiftUtils.initializeOpenShiftClient(server);
+        this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
 
-      buildConfigWatcher = new BuildConfigWatcher(namespace);
-      buildConfigWatcher.start(new Callable<Void>() {
-        @Override
-        public Void call() throws Exception {
-          newBuildWatcher = new NewBuildWatcher(namespace);
-          newBuildWatcher.start();
-          cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
-          cancelledBuildWatcher.start();
+        buildConfigWatcher = new BuildConfigWatcher(namespace);
+        buildConfigWatcher.start(new Callable<Void>() {
+          @Override
+          public Void call() throws Exception {
+            newBuildWatcher = new NewBuildWatcher(namespace);
+            newBuildWatcher.start();
+            cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
+            cancelledBuildWatcher.start();
 
-          return null;
+            return null;
+          }
+        });
+      } catch (KubernetesClientException e) {
+        if (e.getCause() != null) {
+          logger.log(Level.SEVERE, "Failed to configure OpenShift Jenkins Sync Plugin: " +  e.getCause());
+        } else {
+          logger.log(Level.SEVERE, "Failed to configure OpenShift Jenkins Sync Plugin: " +  e);
         }
-      });
+      }
     }
   }
 
