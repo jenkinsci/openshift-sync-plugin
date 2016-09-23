@@ -22,7 +22,7 @@
   <parent>
     <groupId>org.jenkins-ci.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>2.3</version>
+    <version>2.15</version>
     <relativePath />
   </parent>
   <groupId>io.fabric8.jenkins.plugins</groupId>
@@ -42,7 +42,7 @@
          ~ hpi-plugin.version: The HPI Maven Plugin version used by the plugin..
          ~ stapler-plugin.version: The Stapler Maven plugin version required by the plugin.
     -->
-    <openshift-client.version>1.4.1</openshift-client.version>
+    <openshift-client.version>1.4.11</openshift-client.version>
   </properties>
 
   <name>OpenShift Sync</name>
@@ -140,7 +140,6 @@
       <version>0.6</version>
     </dependency>
 
-
     <!-- testing -->
     <dependency>
       <groupId>org.jenkins-ci.plugins.pipeline-stage-view</groupId>
@@ -165,6 +164,10 @@
         <artifactId>maven-hpi-plugin</artifactId>
         <configuration>
           <pluginFirstClassLoader>true</pluginFirstClassLoader>
+          <loggers>
+            <io.fabric8>ALL</io.fabric8>
+            <okhttp3>ALL</okhttp3>
+          </loggers>
         </configuration>
       </plugin>
       <plugin>
