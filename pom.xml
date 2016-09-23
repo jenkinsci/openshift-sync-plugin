@@ -164,6 +164,10 @@
         <artifactId>maven-hpi-plugin</artifactId>
         <configuration>
           <pluginFirstClassLoader>true</pluginFirstClassLoader>
+          <loggers>
+            <io.fabric8>ALL</io.fabric8>
+            <okhttp3>ALL</okhttp3>
+          </loggers>
         </configuration>
       </plugin>
       <plugin>
