@@ -105,7 +105,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       }
     };
     // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
+    Timer.get().schedule(task, 10, TimeUnit.SECONDS);
   }
 
   public void stop() {
