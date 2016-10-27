@@ -16,6 +16,7 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.model.Computer;
 import hudson.model.Job;
 import hudson.security.ACL;
 import hudson.util.XStream2;
@@ -27,11 +28,13 @@ import io.fabric8.openshift.api.model.BuildConfigList;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
+
 import org.apache.tools.ant.filters.StringInputStream;
 import org.jvnet.hudson.reactor.ReactorException;
 
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
@@ -80,9 +83,18 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         while (true) {
           Jenkins jenkins = Jenkins.getInstance();
           if (jenkins != null) {
-            if (jenkins.isAcceptingTasks()) {
-              break;
-            }
+              Computer[] computers = jenkins.getComputers();
+              boolean ready = false;
+              for (Computer c : computers) {
+                  // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
+                  // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
+                  if (c.isAcceptingTasks()) {
+                      ready = true;
+                      break;
+                  }
+              }
+              if (ready)
+                  break;
           }
           try {
             Thread.sleep(500);
