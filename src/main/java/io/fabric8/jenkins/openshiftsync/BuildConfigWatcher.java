@@ -19,6 +19,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Computer;
 import hudson.model.Job;
 import hudson.security.ACL;
+import hudson.triggers.SafeTimerTask;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
@@ -76,9 +77,9 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     logger.info("Now handling startup build configs!!");
     // lets do this in a background thread to avoid errors like:
     //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
-    Runnable task = new Runnable() {
+    Runnable task = new SafeTimerTask() {
       @Override
-      public void run() {
+      public void doRun() {
         logger.info("Waiting for Jenkins to be started");
         while (true) {
           Jenkins jenkins = Jenkins.getInstance();

@@ -17,7 +17,7 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
-import io.fabric8.kubernetes.api.model.Status;
+import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
@@ -64,9 +64,9 @@ public class NewBuildWatcher implements Watcher<Build> {
     logger.info("Now handling startup builds!!");
     // lets do this in a background thread to avoid errors like:
     //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
-    Runnable task = new Runnable() {
+    Runnable task = new SafeTimerTask() {
       @Override
-      public void run() {
+      public void doRun() {
         logger.info("Waiting for Jenkins to be started");
         while (true) {
           Jenkins jenkins = Jenkins.getInstance();
