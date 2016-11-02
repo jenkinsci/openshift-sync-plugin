@@ -29,14 +29,13 @@ import io.fabric8.openshift.api.model.BuildConfigList;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
-
 import org.apache.tools.ant.filters.StringInputStream;
+import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jvnet.hudson.reactor.ReactorException;
 
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
-
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -44,7 +43,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
@@ -118,7 +117,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       }
     };
     // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 10, TimeUnit.SECONDS);
+    Timer.get().schedule(task, 1, TimeUnit.SECONDS);
   }
 
   public void stop() {
@@ -147,7 +146,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       for (BuildConfig buildConfig : items) {
         try {
           upsertJob(buildConfig);
-        } catch (IOException e) {
+        } catch (Exception e) {
           e.printStackTrace();
         }
       }
@@ -175,14 +174,20 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   }
 
   @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  private void upsertJob(final BuildConfig buildConfig) throws IOException {
+  private void upsertJob(final BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
-      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, IOException>() {
+      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
         @Override
-        public Void call() throws IOException {
+        public Void call() throws Exception {
           String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, namespace);
-          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, namespace);
-          if (jobFromBuildConfig == null) {
+          WorkflowJob job = (WorkflowJob) BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+          boolean newJob = job == null;
+          if (newJob) {
+            job = new WorkflowJob(Jenkins.getInstance(), jobName);
+          }
+
+          FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig, namespace);
+          if (flowFromBuildConfig == null) {
             return null;
           }
 
@@ -191,7 +196,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             contextDir = buildConfig.getSpec().getSource().getContextDir();
           }
 
-          jobFromBuildConfig.addProperty(
+          job.addProperty(
             new BuildConfigProjectProperty(
               buildConfig.getMetadata().getNamespace(),
               buildConfig.getMetadata().getName(),
@@ -200,19 +205,21 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
               contextDir
             )
           );
+          job.addTrigger(new BuildTrigger());
+          job.setDefinition(flowFromBuildConfig);
 
-          InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+          InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
           Jenkins jenkins = Jenkins.getInstance();
-          Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-          if (job == null) {
+
+          if (newJob) {
             jenkins.createProjectFromXML(
               jobName,
               jobStream
-            );
+            ).save();
             logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
           } else {
-            BuildConfigProjectProperty buildConfigProjectProperty = (BuildConfigProjectProperty) job.getProperty(BuildConfigProjectProperty.class);
+            BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
             if (buildConfigProjectProperty != null) {
               long updatedBCResourceVersion = parseResourceVersion(buildConfig);
               long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
