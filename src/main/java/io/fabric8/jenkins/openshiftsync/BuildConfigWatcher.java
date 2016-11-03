@@ -181,7 +181,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         public Void call() throws Exception {
           String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, namespace);
           WorkflowJob job = (WorkflowJob) BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-          boolean newJob = job == null;
+          boolean newJob = (job == null);
           if (newJob) {
             job = new WorkflowJob(Jenkins.getInstance(), jobName);
           }
@@ -196,17 +196,32 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             contextDir = buildConfig.getSpec().getSource().getContextDir();
           }
 
-          job.addProperty(
-            new BuildConfigProjectProperty(
-              buildConfig.getMetadata().getNamespace(),
-              buildConfig.getMetadata().getName(),
-              buildConfig.getMetadata().getUid(),
-              buildConfig.getMetadata().getResourceVersion(),
-              contextDir
-            )
-          );
-          job.addTrigger(new BuildTrigger());
           job.setDefinition(flowFromBuildConfig);
+
+          BuildTrigger trigger = new BuildTrigger();
+          if (!job.getTriggers().containsKey(trigger.getDescriptor())) {
+            job.addTrigger(trigger);
+          }
+
+          BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
+          if (buildConfigProjectProperty != null) {
+            long updatedBCResourceVersion = parseResourceVersion(buildConfig);
+            long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
+            if (oldBCResourceVersion > updatedBCResourceVersion) {
+              return null;
+            }
+            buildConfigProjectProperty.setResourceVersion(buildConfig.getMetadata().getResourceVersion());
+          } else {
+            job.addProperty(
+              new BuildConfigProjectProperty(
+                buildConfig.getMetadata().getNamespace(),
+                buildConfig.getMetadata().getName(),
+                buildConfig.getMetadata().getUid(),
+                buildConfig.getMetadata().getResourceVersion(),
+                contextDir
+              )
+            );
+          }
 
           InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
@@ -219,14 +234,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             ).save();
             logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
           } else {
-            BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
-            if (buildConfigProjectProperty != null) {
-              long updatedBCResourceVersion = parseResourceVersion(buildConfig);
-              long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
-              if (oldBCResourceVersion > updatedBCResourceVersion) {
-                return null;
-              }
-            }
             Source source = new StreamSource(jobStream);
             job.updateByXml(source);
             job.save();

@@ -88,6 +88,10 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     return resourceVersion;
   }
 
+  public void setResourceVersion(String resourceVersion) {
+    this.resourceVersion = resourceVersion;
+  }
+
   public String getContextDir() {
     return contextDir;
   }
