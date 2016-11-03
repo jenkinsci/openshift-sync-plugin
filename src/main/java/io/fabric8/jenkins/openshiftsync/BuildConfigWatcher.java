@@ -205,8 +205,11 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
               contextDir
             )
           );
-          job.addTrigger(new BuildTrigger());
           job.setDefinition(flowFromBuildConfig);
+
+          if (newJob) {
+            job.addTrigger(new BuildTrigger());
+          }
 
           InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
