@@ -26,6 +26,7 @@ import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.listeners.RunListener;
+import hudson.triggers.SafeTimerTask;
 import io.fabric8.openshift.api.model.Build;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -125,9 +126,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   protected void checkTimerStarted() {
     if (timerStarted.compareAndSet(false, true)) {
-      Runnable task = new Runnable() {
+      Runnable task = new SafeTimerTask() {
         @Override
-        public void run() {
+        protected void doRun() throws Exception {
           pollLoop();
         }
       };
