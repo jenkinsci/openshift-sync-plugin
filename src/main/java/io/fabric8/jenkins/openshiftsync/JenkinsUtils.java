@@ -16,7 +16,6 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Cause;
-import hudson.model.Executor;
 import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.Run;
@@ -30,7 +29,6 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
 
-import static hudson.model.Result.ABORTED;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -92,6 +90,31 @@ public class JenkinsUtils {
   }
 
   public static void cancelBuild(Job job, Build build) {
+    boolean cancelledQueuedBuild = cancelQueuedBuild(build);
+    if (!cancelledQueuedBuild) {
+      cancelRunningBuild(job, build);
+    }
+    cancelOpenShiftBuild(build);
+  }
+
+  private static boolean cancelRunningBuild(Job job, Build build) {
+    String buildUid = build.getMetadata().getUid();
+
+    for (Object obj : job.getNewBuilds()) {
+      if (obj instanceof WorkflowRun) {
+        final WorkflowRun b = (WorkflowRun) obj;
+        BuildCause cause = b.getCause(BuildCause.class);
+        if (cause != null && cause.getUid().equals(buildUid)) {
+          b.doTerm();
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  public static boolean cancelQueuedBuild(Build build) {
     String buildUid = build.getMetadata().getUid();
     Jenkins jenkins = Jenkins.getInstance();
     if (jenkins != null) {
@@ -100,26 +123,12 @@ public class JenkinsUtils {
         for (Cause cause : item.getCauses()) {
           if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
             buildQueue.cancel(item);
-            cancelOpenShiftBuild(build);
-            return;
+            return true;
           }
         }
       }
-      for (Object obj : job.getNewBuilds()) {
-        if (obj instanceof WorkflowRun) {
-          WorkflowRun b = (WorkflowRun) obj;
-          BuildCause cause = b.getCause(BuildCause.class);
-          if (cause != null && cause.getUid().equals(buildUid)) {
-            Executor e = b.getExecutor();
-            if (e != null) {
-              e.interrupt(ABORTED);
-              break;
-            }
-          }
-        }
-      }
-      cancelOpenShiftBuild(build);
     }
+    return false;
   }
 
   public static WorkflowJob getJobFromBuild(Build build) {
