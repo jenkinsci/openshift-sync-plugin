@@ -34,7 +34,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -53,11 +52,11 @@ public class NewBuildWatcher implements Watcher<Build> {
   public void start() {
     final BuildList builds;
     if (namespace != null && !namespace.isEmpty()) {
-      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
-      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withField("status", BuildPhases.NEW).list();
+      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     } else {
       builds = getOpenShiftClient().builds().withField("status", BuildPhases.NEW).list();
-      buildsWatch = getOpenShiftClient().builds().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      buildsWatch = getOpenShiftClient().builds().withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     }
 
     // lets process the initial state
@@ -130,12 +129,10 @@ public class NewBuildWatcher implements Watcher<Build> {
       });
 
       for (Build build : items) {
-        if (build.getStatus().getPhase().equals(NEW)) {
-          try {
-            buildAdded(build);
-          } catch (IOException e) {
-            e.printStackTrace();
-          }
+        try {
+          buildAdded(build);
+        } catch (IOException e) {
+          e.printStackTrace();
         }
       }
     }
