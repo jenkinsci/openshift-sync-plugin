@@ -21,6 +21,7 @@ import hudson.model.Job;
 import hudson.triggers.Trigger;
 import hudson.triggers.TriggerDescriptor;
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import java.util.Map;
@@ -28,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class BuildTrigger extends Trigger<Job<?, ?>> {
+public class BuildTrigger extends Trigger<WorkflowJob> {
   @Extension
   public static final DescriptorImpl DESCRIPTOR = new DescriptorImpl();
   private static final Logger logger = Logger.getLogger(BuildTrigger.class.getName());
@@ -40,7 +41,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
   }
 
   @Override
-  public void start(Job<?, ?> job, boolean newInstance) {
+  public void start(WorkflowJob job, boolean newInstance) {
     super.start(job, newInstance);
 
     this.buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
@@ -82,7 +83,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
      * map of jobs (by the build config uid);  No need to keep the projects from shutdown to startup.
      * New triggers will register here, and ones that are stopping will remove themselves.
      */
-    private transient Map<String, Job> buildConfigJobs;
+    private transient Map<String, WorkflowJob> buildConfigJobs;
 
     public DescriptorImpl() {
       load();
@@ -102,7 +103,7 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
       return "OpenShift Jenkins Pipeline Builder";
     }
 
-    private void addBuildConfigTrigger(String buildConfigUid, Job job) {
+    private void addBuildConfigTrigger(String buildConfigUid, WorkflowJob job) {
       if (job == null || StringUtils.isEmpty(buildConfigUid)) {
         return;
       }
@@ -116,10 +117,10 @@ public class BuildTrigger extends Trigger<Job<?, ?>> {
       buildConfigJobs.remove(buildConfigUid);
     }
 
-    public Job getJobFromBuildConfigUid(String buildConfigUid) {
+    public WorkflowJob getJobFromBuildConfigUid(String buildConfigUid) {
       logger.log(Level.FINE, "Retrieving triggers for build config [{0}]", new String[]{buildConfigUid});
 
-      Job job = buildConfigJobs.get(buildConfigUid);
+      WorkflowJob job = buildConfigJobs.get(buildConfigUid);
       if (job != null) {
         logger.log(Level.FINE, "Found project [{0}] for build config uid [{1}]", new Object[]{job.getFullName(), buildConfigUid});
       }

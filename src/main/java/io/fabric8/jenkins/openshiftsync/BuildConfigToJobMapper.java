@@ -41,6 +41,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static org.apache.commons.lang.StringUtils.isEmpty;
 import static org.apache.commons.lang.StringUtils.isNotBlank;
 
@@ -49,7 +50,7 @@ public class BuildConfigToJobMapper {
   public static final String DEFAULT_JENKINS_FILEPATH = "Jenkinsfile";
   private static final Logger LOGGER = Logger.getLogger(BuildConfigToJobMapper.class.getName());
 
-  public static FlowDefinition mapBuildConfigToFlow(BuildConfig bc, String namespace) throws IOException {
+  public static FlowDefinition mapBuildConfigToFlow(BuildConfig bc) throws IOException {
     if (!OpenShiftUtils.isJenkinsBuildConfig(bc)) {
       return null;
     }
@@ -86,8 +87,9 @@ public class BuildConfigToJobMapper {
         if (isNotBlank(branchRef)) {
           branchSpecs = Collections.singletonList(new BranchSpec(branchRef));
         }
+        String credentialsId = updateSourceCredentials(bc);
         GitSCM scm = new GitSCM(
-          Collections.singletonList(new UserRemoteConfig(gitSource.getUri(), null, null, null)),
+          Collections.singletonList(new UserRemoteConfig(gitSource.getUri(), null, null, credentialsId)),
           branchSpecs,
           false,
           Collections.<SubmoduleConfig>emptyList(),

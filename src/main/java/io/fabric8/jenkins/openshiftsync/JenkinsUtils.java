@@ -28,16 +28,16 @@ import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
-import java.util.logging.Logger;
+import java.io.IOException;
 
 import static hudson.model.Result.ABORTED;
+import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 /**
  */
 public class JenkinsUtils {
-  private final static Logger logger = Logger.getLogger(JenkinsUtils.class.getName());
 
   public static Job getJob(String job) {
     Jenkins jenkins = Jenkins.getInstance();
@@ -75,12 +75,20 @@ public class JenkinsUtils {
     return root;
   }
 
-  public static void triggerJob(Job job, Build build) {
-    Cause cause = new BuildCause(build);
-    if (job instanceof WorkflowJob) {
-      WorkflowJob workflowJob = (WorkflowJob) job;
-      workflowJob.scheduleBuild(cause);
+  public static void triggerJob(WorkflowJob job, Build build) throws IOException {
+    String buildConfigName = build.getStatus().getConfig().getName();
+    if (StringUtils.isEmpty(buildConfigName)) {
+      return;
     }
+    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    if (buildConfig == null) {
+      return;
+    }
+
+    updateSourceCredentials(buildConfig);
+
+    Cause cause = new BuildCause(build);
+    job.scheduleBuild(cause);
   }
 
   public static void cancelBuild(Job job, Build build) {
@@ -114,7 +122,7 @@ public class JenkinsUtils {
     }
   }
 
-  public static Job getJobFromBuild(Build build) {
+  public static WorkflowJob getJobFromBuild(Build build) {
     String buildConfigName = build.getStatus().getConfig().getName();
     if (StringUtils.isEmpty(buildConfigName)) {
       return null;

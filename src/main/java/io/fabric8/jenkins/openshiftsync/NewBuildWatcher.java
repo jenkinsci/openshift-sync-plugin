@@ -16,7 +16,6 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.model.Job;
 import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
@@ -25,6 +24,7 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildList;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -114,7 +114,6 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   public void onInitialBuilds(BuildList buildList) {
 
     List<Build> items = buildList.getItems();
@@ -156,14 +155,13 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void buildAdded(Build build) throws IOException {
     if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       cancelOpenShiftBuild(build);
       return;
     }
 
-    Job job = getJobFromBuild(build);
+    WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
       JenkinsUtils.triggerJob(job, build);
     }

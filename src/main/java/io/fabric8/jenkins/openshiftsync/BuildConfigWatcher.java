@@ -139,8 +139,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  public void onInitialBuildConfigs(BuildConfigList buildConfigs) {
+  private void onInitialBuildConfigs(BuildConfigList buildConfigs) {
     List<BuildConfig> items = buildConfigs.getItems();
     if (items != null) {
       for (BuildConfig buildConfig : items) {
@@ -173,20 +172,19 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void upsertJob(final BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
       ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
         @Override
         public Void call() throws Exception {
           String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, namespace);
-          WorkflowJob job = (WorkflowJob) BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-          boolean newJob = (job == null);
+          WorkflowJob job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+          boolean newJob = job == null;
           if (newJob) {
             job = new WorkflowJob(Jenkins.getInstance(), jobName);
           }
 
-          FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig, namespace);
+          FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig);
           if (flowFromBuildConfig == null) {
             return null;
           }
@@ -245,7 +243,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void modifyJob(BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
       upsertJob(buildConfig);
@@ -256,7 +253,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     deleteJob(buildConfig);
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(final BuildConfig buildConfig) throws Exception {
     final Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
     if (job != null) {
