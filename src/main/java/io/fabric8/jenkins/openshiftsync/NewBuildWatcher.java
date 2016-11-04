@@ -114,7 +114,6 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   public void onInitialBuilds(BuildList buildList) {
 
     List<Build> items = buildList.getItems();
@@ -156,7 +155,6 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void buildAdded(Build build) throws IOException {
     if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       cancelOpenShiftBuild(build);
