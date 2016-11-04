@@ -16,7 +16,6 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.model.Job;
 import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
@@ -25,6 +24,7 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildList;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -163,7 +163,7 @@ public class NewBuildWatcher implements Watcher<Build> {
       return;
     }
 
-    Job job = getJobFromBuild(build);
+    WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
       JenkinsUtils.triggerJob(job, build);
     }
