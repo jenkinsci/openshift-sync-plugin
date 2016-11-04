@@ -17,7 +17,6 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Job;
-import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
@@ -44,10 +43,10 @@ public class CancelledBuildWatcher implements Watcher<Build> {
     final BuildList builds;
     if (namespace != null && !namespace.isEmpty()) {
       builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).list();
-      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     } else {
       builds = getOpenShiftClient().builds().withField("status", BuildPhases.RUNNING).list();
-      buildsWatch = getOpenShiftClient().builds().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      buildsWatch = getOpenShiftClient().builds().withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     }
   }
 
