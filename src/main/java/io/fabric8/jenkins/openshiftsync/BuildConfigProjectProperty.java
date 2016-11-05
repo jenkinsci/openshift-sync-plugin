@@ -43,15 +43,13 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   private String resourceVersion;
 
-  private String contextDir;
 
   @DataBoundConstructor
-  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion, String contextDir) {
+  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion) {
     this.namespace = namespace;
     this.name = name;
     this.uid = uid;
     this.resourceVersion = resourceVersion;
-    this.contextDir = contextDir;
   }
 
   public BuildConfigProjectProperty(BuildConfig bc) {
@@ -60,7 +58,6 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
       bc.getMetadata().getName(),
       bc.getMetadata().getUid(),
       bc.getMetadata().getResourceVersion(),
-      bc.getSpec().getSource().getContextDir()
     );
   }
 
