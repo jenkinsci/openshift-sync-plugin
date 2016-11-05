@@ -31,6 +31,8 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
  * - Namespace
  * - Build config name
  * - Build config uid
+ * - Build config resource version
+ * - Build config run policy
  */
 public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
@@ -43,13 +45,15 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   private String resourceVersion;
 
+  private String buildRunPolicy;
 
   @DataBoundConstructor
-  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion) {
+  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion, String buildRunPolicy) {
     this.namespace = namespace;
     this.name = name;
     this.uid = uid;
     this.resourceVersion = resourceVersion;
+    this.buildRunPolicy = buildRunPolicy;
   }
 
   public BuildConfigProjectProperty(BuildConfig bc) {
@@ -58,7 +62,7 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
       bc.getMetadata().getName(),
       bc.getMetadata().getUid(),
       bc.getMetadata().getResourceVersion(),
-    );
+      bc.getSpec().getRunPolicy());
   }
 
   public String getUid() {
@@ -89,8 +93,8 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     this.resourceVersion = resourceVersion;
   }
 
-  public String getContextDir() {
-    return contextDir;
+  public String getBuildRunPolicy() {
+    return buildRunPolicy;
   }
 
   @Extension
