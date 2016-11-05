@@ -20,7 +20,7 @@ import hudson.model.Job;
 import hudson.model.JobProperty;
 import hudson.model.JobPropertyDescriptor;
 import io.fabric8.openshift.api.model.BuildConfig;
-import jenkins.model.ParameterizedJobMixIn;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -96,7 +96,7 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
   @Extension
   public static final class DescriptorImpl extends JobPropertyDescriptor {
     public boolean isApplicable(Class<? extends Job> jobType) {
-      return ParameterizedJobMixIn.ParameterizedJob.class.isAssignableFrom(jobType);
+      return WorkflowJob.class.isAssignableFrom(jobType);
     }
   }
 }
