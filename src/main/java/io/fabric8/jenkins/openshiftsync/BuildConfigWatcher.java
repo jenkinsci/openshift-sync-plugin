@@ -189,11 +189,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             return null;
           }
 
-          String contextDir = null;
-          if (buildConfig.getSpec() != null && buildConfig.getSpec().getSource() != null) {
-            contextDir = buildConfig.getSpec().getSource().getContextDir();
-          }
-
           job.setDefinition(flowFromBuildConfig);
 
           BuildTrigger trigger = new BuildTrigger();
@@ -205,19 +200,23 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           if (buildConfigProjectProperty != null) {
             long updatedBCResourceVersion = parseResourceVersion(buildConfig);
             long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
-            if (oldBCResourceVersion > updatedBCResourceVersion) {
+            BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
+            if (updatedBCResourceVersion <= oldBCResourceVersion &&
+              newProperty.getUid().equals(buildConfigProjectProperty.getUid()) &&
+              newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace()) &&
+                newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
+                newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
+                ) {
               return null;
             }
-            buildConfigProjectProperty.setResourceVersion(buildConfig.getMetadata().getResourceVersion());
+            buildConfigProjectProperty.setUid(newProperty.getUid());
+            buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
+            buildConfigProjectProperty.setName(newProperty.getName());
+            buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
+            buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
           } else {
             job.addProperty(
-              new BuildConfigProjectProperty(
-                buildConfig.getMetadata().getNamespace(),
-                buildConfig.getMetadata().getName(),
-                buildConfig.getMetadata().getUid(),
-                buildConfig.getMetadata().getResourceVersion(),
-                contextDir
-              )
+              new BuildConfigProjectProperty(buildConfig)
             );
           }
 

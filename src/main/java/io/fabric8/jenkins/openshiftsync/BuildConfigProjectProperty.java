@@ -65,10 +65,6 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
       bc.getSpec().getRunPolicy());
   }
 
-  public String getUid() {
-    return uid;
-  }
-
   public BuildConfig getBuildConfig() {
     BuildConfig bc = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(name).get();
     if (bc != null && bc.getMetadata().getUid().equals(uid)) {
@@ -77,12 +73,28 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     return null;
   }
 
+  public String getUid() {
+    return uid;
+  }
+
+  public void setUid(String uid) {
+    this.uid = uid;
+  }
+
   public String getName() {
     return name;
   }
 
+  public void setName(String name) {
+    this.name = name;
+  }
+
   public String getNamespace() {
     return namespace;
+  }
+
+  public void setNamespace(String namespace) {
+    this.namespace = namespace;
   }
 
   public String getResourceVersion() {
@@ -95,6 +107,10 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   public String getBuildRunPolicy() {
     return buildRunPolicy;
+  }
+
+  public void setBuildRunPolicy(String buildRunPolicy) {
+    this.buildRunPolicy = buildRunPolicy;
   }
 
   @Extension
