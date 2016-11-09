@@ -113,7 +113,7 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  public void onInitialBuilds(BuildList buildList) {
+  public synchronized void onInitialBuilds(BuildList buildList) {
 
     List<Build> items = buildList.getItems();
     if (items != null) {
@@ -152,7 +152,7 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  private void buildAdded(Build build) throws IOException {
+  private synchronized void buildAdded(Build build) throws IOException {
     if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       cancelOpenShiftBuild(build);
       return;
