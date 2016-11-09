@@ -28,22 +28,25 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
+import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static org.apache.commons.lang.StringUtils.isBlank;
 
 /**
  */
 public class JenkinsUtils {
 
+  private static final Logger LOGGER = Logger.getLogger(JenkinsUtils.class.getName());
+
   public static Job getJob(String job) {
-    Jenkins jenkins = Jenkins.getInstance();
-    if (jenkins != null) {
-      TopLevelItem item = jenkins.getItem(job);
-      if (item instanceof Job) {
-        return (Job) item;
-      }
+    TopLevelItem item = Jenkins.getActiveInstance().getItem(job);
+    if (item instanceof Job) {
+      return (Job) item;
     }
     return null;
   }
@@ -62,11 +65,7 @@ public class JenkinsUtils {
 
   public static String getRootUrl() {
     // TODO is there a better place to find this?
-    String root = null;
-    Jenkins jenkins = Jenkins.getInstance();
-    if (jenkins != null) {
-      root = jenkins.getRootUrl();
-    }
+    String root = Jenkins.getActiveInstance().getRootUrl();
     if (root == null || root.length() == 0) {
       root = "http://localhost:8080/jenkins/";
     }
@@ -116,15 +115,12 @@ public class JenkinsUtils {
 
   public static boolean cancelQueuedBuild(Build build) {
     String buildUid = build.getMetadata().getUid();
-    Jenkins jenkins = Jenkins.getInstance();
-    if (jenkins != null) {
-      Queue buildQueue = jenkins.getQueue();
-      for (Queue.Item item : buildQueue.getItems()) {
-        for (Cause cause : item.getCauses()) {
-          if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
-            buildQueue.cancel(item);
-            return true;
-          }
+    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (Queue.Item item : buildQueue.getItems()) {
+      for (Cause cause : item.getCauses()) {
+        if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
+          buildQueue.cancel(item);
+          return true;
         }
       }
     }

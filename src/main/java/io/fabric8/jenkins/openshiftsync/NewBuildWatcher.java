@@ -68,11 +68,8 @@ public class NewBuildWatcher implements Watcher<Build> {
       public void doRun() {
         logger.info("Waiting for Jenkins to be started");
         while (true) {
-          Jenkins jenkins = Jenkins.getInstance();
-          if (jenkins != null) {
-            if (jenkins.isAcceptingTasks()) {
-              break;
-            }
+          if (Jenkins.getActiveInstance().isAcceptingTasks()) {
+            break;
           }
           try {
             Thread.sleep(500);

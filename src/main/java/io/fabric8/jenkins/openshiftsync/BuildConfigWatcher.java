@@ -81,20 +81,18 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       public void doRun() {
         logger.info("Waiting for Jenkins to be started");
         while (true) {
-          Jenkins jenkins = Jenkins.getInstance();
-          if (jenkins != null) {
-              Computer[] computers = jenkins.getComputers();
-              boolean ready = false;
-              for (Computer c : computers) {
-                  // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
-                  // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
-                  if (c.isAcceptingTasks()) {
-                      ready = true;
-                      break;
-                  }
-              }
-              if (ready)
-                  break;
+          Computer[] computers = Jenkins.getActiveInstance().getComputers();
+          boolean ready = false;
+          for (Computer c : computers) {
+            // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
+            // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
+            if (c.isAcceptingTasks()) {
+              ready = true;
+              break;
+            }
+          }
+          if (ready) {
+            break;
           }
           try {
             Thread.sleep(500);
@@ -181,7 +179,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           WorkflowJob job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
           boolean newJob = job == null;
           if (newJob) {
-            job = new WorkflowJob(Jenkins.getInstance(), jobName);
+            job = new WorkflowJob(Jenkins.getActiveInstance(), jobName);
           }
 
           FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig);
@@ -225,7 +223,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           Jenkins jenkins = Jenkins.getInstance();
 
           if (newJob) {
-            jenkins.createProjectFromXML(
+            Jenkins.getActiveInstance().createProjectFromXML(
               jobName,
               jobStream
             ).save();
@@ -259,14 +257,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         @Override
         public Void call() throws Exception {
           job.delete();
-          try {
-            Jenkins jenkins = Jenkins.getInstance();
-            if (jenkins != null) {
-              jenkins.reload();
-            }
-          } catch (ReactorException e) {
-            logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + job.getName() + " from BuildConfig " + NamespaceName.create(buildConfig));
-          }
+          Jenkins.getActiveInstance().rebuildDependencyGraphAsync();
           return null;
         }
       });
