@@ -37,7 +37,6 @@ import java.util.logging.Logger;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseTimestamp;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
 public class NewBuildWatcher implements Watcher<Build> {
@@ -119,8 +118,8 @@ public class NewBuildWatcher implements Watcher<Build> {
         @Override
         public int compare(Build b1, Build b2) {
           return Long.compare(
-            parseTimestamp(b1.getMetadata().getCreationTimestamp()),
-            parseTimestamp(b2.getMetadata().getCreationTimestamp())
+            Long.parseLong(b1.getMetadata().getAnnotations().get("openshift.io/build.number")),
+            Long.parseLong(b2.getMetadata().getAnnotations().get("openshift.io/build.number"))
           );
         }
       });
