@@ -33,15 +33,19 @@ public class BuildCause extends Cause {
 
   private String commit;
 
-  public BuildCause(String uid, String namespace, String name, String gitUri, String commit) {
+  private String buildConfigUid;
+
+  public BuildCause(String uid, String namespace, String name, String gitUri, String commit, String buildConfigUid) {
     this.uid = uid;
     this.namespace = namespace;
     this.name = name;
     this.gitUri = gitUri;
     this.commit = commit;
+    this.buildConfigUid = buildConfigUid;
   }
 
-  public BuildCause(Build build) {
+  public BuildCause(Build build, String buildConfigUid) {
+    this.buildConfigUid = buildConfigUid;
     if (build == null || build.getMetadata() == null) {
       return;
     }
@@ -95,5 +99,9 @@ public class BuildCause extends Cause {
 
   public String getCommit() {
     return commit;
+  }
+
+  public String getBuildConfigUid() {
+    return buildConfigUid;
   }
 }
