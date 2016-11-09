@@ -244,6 +244,9 @@
             <io.fabric8>ALL</io.fabric8>
             <okhttp3>ALL</okhttp3>
           </loggers>
+          <webApp>
+            <contextPath>/</contextPath>
+          </webApp>
         </configuration>
       </plugin>
       <plugin>
