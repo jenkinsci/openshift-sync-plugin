@@ -32,7 +32,6 @@ import jenkins.util.Timer;
 import org.apache.tools.ant.filters.StringInputStream;
 import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.jvnet.hudson.reactor.ReactorException;
 
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
@@ -44,6 +43,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
@@ -202,9 +203,9 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             if (updatedBCResourceVersion <= oldBCResourceVersion &&
               newProperty.getUid().equals(buildConfigProjectProperty.getUid()) &&
               newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace()) &&
-                newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
-                newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
-                ) {
+              newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
+              newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
+              ) {
               return null;
             }
             buildConfigProjectProperty.setUid(newProperty.getUid());
@@ -218,9 +219,12 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             );
           }
 
-          InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
+          job.setConcurrentBuild(
+            !(buildConfig.getSpec().getRunPolicy().equals(SERIAL) ||
+              buildConfig.getSpec().getRunPolicy().equals(SERIAL_LATEST_ONLY))
+          );
 
-          Jenkins jenkins = Jenkins.getInstance();
+          InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
           if (newJob) {
             Jenkins.getActiveInstance().createProjectFromXML(
