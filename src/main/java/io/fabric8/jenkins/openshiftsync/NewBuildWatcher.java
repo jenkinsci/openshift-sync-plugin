@@ -35,6 +35,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_GONE;
@@ -148,7 +149,7 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  private synchronized void buildAdded(Build build) throws IOException {
+  public static synchronized void buildAdded(Build build) throws IOException {
     if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       cancelOpenShiftBuild(build);
       return;
@@ -156,9 +157,8 @@ public class NewBuildWatcher implements Watcher<Build> {
 
     WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
-      JenkinsUtils.triggerJob(job, build);
+      triggerJob(job, build);
     }
   }
-
 
 }

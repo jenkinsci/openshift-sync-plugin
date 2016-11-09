@@ -21,6 +21,7 @@ import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
 import io.fabric8.openshift.api.model.Build;
+import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
@@ -67,16 +68,37 @@ public class JenkinsUtils {
     // TODO is there a better place to find this?
     String root = Jenkins.getActiveInstance().getRootUrl();
     if (root == null || root.length() == 0) {
-      root = "http://localhost:8080/jenkins/";
+      root = "http://localhost:8080/";
     }
     return root;
   }
 
-  public static void triggerJob(WorkflowJob job, Build build) throws IOException {
+  public synchronized static void triggerJob(WorkflowJob job, Build build) throws IOException {
     String buildConfigName = build.getStatus().getConfig().getName();
-    if (StringUtils.isEmpty(buildConfigName)) {
+    if (isBlank(buildConfigName)) {
       return;
     }
+
+    BuildConfigProjectProperty bcProp = job.getProperty(BuildConfigProjectProperty.class);
+    if (bcProp == null) {
+      return;
+    }
+
+    switch (bcProp.getBuildRunPolicy()) {
+      case SERIAL_LATEST_ONLY:
+        cancelQueuedBuilds(bcProp.getUid());
+        if (job.getLastBuild().isBuilding()) {
+          return;
+        }
+        break;
+      case SERIAL:
+        if (hasQueuedBuilds(bcProp.getUid()) || job.getLastBuild().isBuilding()) {
+          return;
+        }
+        break;
+      default:
+    }
+
     BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
     if (buildConfig == null) {
       return;
@@ -84,11 +106,11 @@ public class JenkinsUtils {
 
     updateSourceCredentials(buildConfig);
 
-    Cause cause = new BuildCause(build);
+    Cause cause = new BuildCause(build, bcProp.getUid());
     job.scheduleBuild(cause);
   }
 
-  public static void cancelBuild(Job job, Build build) {
+  public synchronized static void cancelBuild(Job job, Build build) {
     boolean cancelledQueuedBuild = cancelQueuedBuild(build);
     if (!cancelledQueuedBuild) {
       cancelRunningBuild(job, build);
@@ -99,7 +121,7 @@ public class JenkinsUtils {
   private static boolean cancelRunningBuild(Job job, Build build) {
     String buildUid = build.getMetadata().getUid();
 
-    for (Object obj : job.getNewBuilds()) {
+    for (Object obj : job.getBuilds()) {
       if (obj instanceof WorkflowRun) {
         final WorkflowRun b = (WorkflowRun) obj;
         BuildCause cause = b.getCause(BuildCause.class);
@@ -127,6 +149,28 @@ public class JenkinsUtils {
     return false;
   }
 
+  public static void cancelQueuedBuilds(String bcUid) {
+    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (Queue.Item item : buildQueue.getItems()) {
+      for (Cause cause : item.getCauses()) {
+        if (cause instanceof BuildCause) {
+          BuildCause buildCause = (BuildCause) cause;
+          if (buildCause.getBuildConfigUid().equals(bcUid)) {
+            if (buildQueue.cancel(item)) {
+              cancelOpenShiftBuild(
+                new BuildBuilder()
+                  .withNewMetadata()
+                  .withNamespace(buildCause.getNamespace())
+                  .withName(buildCause.getName())
+                  .and().build()
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
   public static WorkflowJob getJobFromBuild(Build build) {
     String buildConfigName = build.getStatus().getConfig().getName();
     if (StringUtils.isEmpty(buildConfigName)) {
@@ -137,5 +181,20 @@ public class JenkinsUtils {
       return null;
     }
     return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+  }
+
+  private static boolean hasQueuedBuilds(String bcUid) {
+    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (Queue.Item item : buildQueue.getItems()) {
+      for (Cause cause : item.getCauses()) {
+        if (cause instanceof BuildCause) {
+          BuildCause buildCause = (BuildCause) cause;
+          if (buildCause.getBuildConfigUid().equals(bcUid)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 }
