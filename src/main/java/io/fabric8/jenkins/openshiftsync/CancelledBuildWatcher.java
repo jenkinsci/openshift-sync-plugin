@@ -26,6 +26,8 @@ import io.fabric8.openshift.api.model.BuildList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_GONE;
@@ -42,11 +44,11 @@ public class CancelledBuildWatcher implements Watcher<Build> {
   public void start() {
     final BuildList builds;
     if (namespace != null && !namespace.isEmpty()) {
-      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).list();
-      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      builds = getOpenShiftClient().builds().inNamespace(namespace).list();
+      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     } else {
-      builds = getOpenShiftClient().builds().withField("status", BuildPhases.RUNNING).list();
-      buildsWatch = getOpenShiftClient().builds().withField("status", BuildPhases.RUNNING).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
+      builds = getOpenShiftClient().builds().list();
+      buildsWatch = getOpenShiftClient().builds().withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     }
   }
 
@@ -84,7 +86,8 @@ public class CancelledBuildWatcher implements Watcher<Build> {
   }
 
   private void buildModified(Build build) {
-    if (Boolean.TRUE.equals(build.getStatus().getCancelled())) {
+    if ((build.getStatus().getPhase().equals(NEW) || build.getStatus().getPhase().equals(RUNNING)) &&
+      Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       Job job = getJobFromBuild(build);
       if (job != null) {
         JenkinsUtils.cancelBuild(job, build);

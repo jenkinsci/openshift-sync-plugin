@@ -35,9 +35,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseTimestamp;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
 public class NewBuildWatcher implements Watcher<Build> {
@@ -68,11 +68,8 @@ public class NewBuildWatcher implements Watcher<Build> {
       public void doRun() {
         logger.info("Waiting for Jenkins to be started");
         while (true) {
-          Jenkins jenkins = Jenkins.getInstance();
-          if (jenkins != null) {
-            if (jenkins.isAcceptingTasks()) {
-              break;
-            }
+          if (Jenkins.getActiveInstance().isAcceptingTasks()) {
+            break;
           }
           try {
             Thread.sleep(500);
@@ -113,7 +110,7 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  public void onInitialBuilds(BuildList buildList) {
+  public synchronized void onInitialBuilds(BuildList buildList) {
 
     List<Build> items = buildList.getItems();
     if (items != null) {
@@ -122,8 +119,8 @@ public class NewBuildWatcher implements Watcher<Build> {
         @Override
         public int compare(Build b1, Build b2) {
           return Long.compare(
-            parseTimestamp(b1.getMetadata().getCreationTimestamp()),
-            parseTimestamp(b2.getMetadata().getCreationTimestamp())
+            Long.parseLong(b1.getMetadata().getAnnotations().get("openshift.io/build.number")),
+            Long.parseLong(b2.getMetadata().getAnnotations().get("openshift.io/build.number"))
           );
         }
       });
@@ -152,7 +149,7 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  private void buildAdded(Build build) throws IOException {
+  public static synchronized void buildAdded(Build build) throws IOException {
     if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       cancelOpenShiftBuild(build);
       return;
@@ -160,9 +157,8 @@ public class NewBuildWatcher implements Watcher<Build> {
 
     WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
-      JenkinsUtils.triggerJob(job, build);
+      triggerJob(job, build);
     }
   }
-
 
 }

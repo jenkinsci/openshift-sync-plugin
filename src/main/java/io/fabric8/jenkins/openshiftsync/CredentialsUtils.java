@@ -43,7 +43,7 @@ public class CredentialsUtils {
         Credentials existingCreds = lookupCredentials(id);
         final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
         try {
-          CredentialsStore s = CredentialsProvider.lookupStores(Jenkins.getInstance()).iterator().next();
+          CredentialsStore s = CredentialsProvider.lookupStores(Jenkins.getActiveInstance()).iterator().next();
           if (existingCreds != null) {
             s.updateCredentials(Domain.global(), existingCreds, creds);
           } else {
@@ -61,7 +61,7 @@ public class CredentialsUtils {
     return CredentialsMatchers.firstOrNull(
       CredentialsProvider.lookupCredentials(
         Credentials.class,
-        Jenkins.getInstance(),
+        Jenkins.getActiveInstance(),
         ACL.SYSTEM,
         Collections.<DomainRequirement> emptyList()
       ),

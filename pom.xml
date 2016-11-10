@@ -177,6 +177,13 @@
 
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-scm-step</artifactId>
+      <version>2.2</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
       <artifactId>workflow-support</artifactId>
       <version>2.10</version>
       <scope>test</scope>
@@ -237,6 +244,9 @@
             <io.fabric8>ALL</io.fabric8>
             <okhttp3>ALL</okhttp3>
           </loggers>
+          <webApp>
+            <contextPath>/</contextPath>
+          </webApp>
         </configuration>
       </plugin>
       <plugin>

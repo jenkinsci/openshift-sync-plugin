@@ -21,6 +21,7 @@ import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
 import io.fabric8.openshift.api.model.Build;
+import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
@@ -28,22 +29,25 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
+import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static org.apache.commons.lang.StringUtils.isBlank;
 
 /**
  */
 public class JenkinsUtils {
 
+  private static final Logger LOGGER = Logger.getLogger(JenkinsUtils.class.getName());
+
   public static Job getJob(String job) {
-    Jenkins jenkins = Jenkins.getInstance();
-    if (jenkins != null) {
-      TopLevelItem item = jenkins.getItem(job);
-      if (item instanceof Job) {
-        return (Job) item;
-      }
+    TopLevelItem item = Jenkins.getActiveInstance().getItem(job);
+    if (item instanceof Job) {
+      return (Job) item;
     }
     return null;
   }
@@ -62,22 +66,39 @@ public class JenkinsUtils {
 
   public static String getRootUrl() {
     // TODO is there a better place to find this?
-    String root = null;
-    Jenkins jenkins = Jenkins.getInstance();
-    if (jenkins != null) {
-      root = jenkins.getRootUrl();
-    }
+    String root = Jenkins.getActiveInstance().getRootUrl();
     if (root == null || root.length() == 0) {
-      root = "http://localhost:8080/jenkins/";
+      root = "http://localhost:8080/";
     }
     return root;
   }
 
-  public static void triggerJob(WorkflowJob job, Build build) throws IOException {
+  public synchronized static void triggerJob(WorkflowJob job, Build build) throws IOException {
     String buildConfigName = build.getStatus().getConfig().getName();
-    if (StringUtils.isEmpty(buildConfigName)) {
+    if (isBlank(buildConfigName)) {
       return;
     }
+
+    BuildConfigProjectProperty bcProp = job.getProperty(BuildConfigProjectProperty.class);
+    if (bcProp == null) {
+      return;
+    }
+
+    switch (bcProp.getBuildRunPolicy()) {
+      case SERIAL_LATEST_ONLY:
+        cancelQueuedBuilds(bcProp.getUid());
+        if (job.getLastBuild().isBuilding()) {
+          return;
+        }
+        break;
+      case SERIAL:
+        if (hasQueuedBuilds(bcProp.getUid()) || job.getLastBuild().isBuilding()) {
+          return;
+        }
+        break;
+      default:
+    }
+
     BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
     if (buildConfig == null) {
       return;
@@ -85,11 +106,11 @@ public class JenkinsUtils {
 
     updateSourceCredentials(buildConfig);
 
-    Cause cause = new BuildCause(build);
+    Cause cause = new BuildCause(build, bcProp.getUid());
     job.scheduleBuild(cause);
   }
 
-  public static void cancelBuild(Job job, Build build) {
+  public synchronized static void cancelBuild(Job job, Build build) {
     boolean cancelledQueuedBuild = cancelQueuedBuild(build);
     if (!cancelledQueuedBuild) {
       cancelRunningBuild(job, build);
@@ -100,7 +121,7 @@ public class JenkinsUtils {
   private static boolean cancelRunningBuild(Job job, Build build) {
     String buildUid = build.getMetadata().getUid();
 
-    for (Object obj : job.getNewBuilds()) {
+    for (Object obj : job.getBuilds()) {
       if (obj instanceof WorkflowRun) {
         final WorkflowRun b = (WorkflowRun) obj;
         BuildCause cause = b.getCause(BuildCause.class);
@@ -116,19 +137,38 @@ public class JenkinsUtils {
 
   public static boolean cancelQueuedBuild(Build build) {
     String buildUid = build.getMetadata().getUid();
-    Jenkins jenkins = Jenkins.getInstance();
-    if (jenkins != null) {
-      Queue buildQueue = jenkins.getQueue();
-      for (Queue.Item item : buildQueue.getItems()) {
-        for (Cause cause : item.getCauses()) {
-          if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
-            buildQueue.cancel(item);
-            return true;
-          }
+    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (Queue.Item item : buildQueue.getItems()) {
+      for (Cause cause : item.getCauses()) {
+        if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
+          buildQueue.cancel(item);
+          return true;
         }
       }
     }
     return false;
+  }
+
+  public static void cancelQueuedBuilds(String bcUid) {
+    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (Queue.Item item : buildQueue.getItems()) {
+      for (Cause cause : item.getCauses()) {
+        if (cause instanceof BuildCause) {
+          BuildCause buildCause = (BuildCause) cause;
+          if (buildCause.getBuildConfigUid().equals(bcUid)) {
+            if (buildQueue.cancel(item)) {
+              cancelOpenShiftBuild(
+                new BuildBuilder()
+                  .withNewMetadata()
+                  .withNamespace(buildCause.getNamespace())
+                  .withName(buildCause.getName())
+                  .and().build()
+              );
+            }
+          }
+        }
+      }
+    }
   }
 
   public static WorkflowJob getJobFromBuild(Build build) {
@@ -141,5 +181,20 @@ public class JenkinsUtils {
       return null;
     }
     return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+  }
+
+  private static boolean hasQueuedBuilds(String bcUid) {
+    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (Queue.Item item : buildQueue.getItems()) {
+      for (Cause cause : item.getCauses()) {
+        if (cause instanceof BuildCause) {
+          BuildCause buildCause = (BuildCause) cause;
+          if (buildCause.getBuildConfigUid().equals(bcUid)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 }

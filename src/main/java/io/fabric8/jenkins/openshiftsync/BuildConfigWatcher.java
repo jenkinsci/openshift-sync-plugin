@@ -32,7 +32,6 @@ import jenkins.util.Timer;
 import org.apache.tools.ant.filters.StringInputStream;
 import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.jvnet.hudson.reactor.ReactorException;
 
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
@@ -44,6 +43,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
@@ -81,20 +82,18 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       public void doRun() {
         logger.info("Waiting for Jenkins to be started");
         while (true) {
-          Jenkins jenkins = Jenkins.getInstance();
-          if (jenkins != null) {
-              Computer[] computers = jenkins.getComputers();
-              boolean ready = false;
-              for (Computer c : computers) {
-                  // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
-                  // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
-                  if (c.isAcceptingTasks()) {
-                      ready = true;
-                      break;
-                  }
-              }
-              if (ready)
-                  break;
+          Computer[] computers = Jenkins.getActiveInstance().getComputers();
+          boolean ready = false;
+          for (Computer c : computers) {
+            // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
+            // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
+            if (c.isAcceptingTasks()) {
+              ready = true;
+              break;
+            }
+          }
+          if (ready) {
+            break;
           }
           try {
             Thread.sleep(500);
@@ -181,17 +180,12 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           WorkflowJob job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
           boolean newJob = job == null;
           if (newJob) {
-            job = new WorkflowJob(Jenkins.getInstance(), jobName);
+            job = new WorkflowJob(Jenkins.getActiveInstance(), jobName);
           }
 
           FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig);
           if (flowFromBuildConfig == null) {
             return null;
-          }
-
-          String contextDir = null;
-          if (buildConfig.getSpec() != null && buildConfig.getSpec().getSource() != null) {
-            contextDir = buildConfig.getSpec().getSource().getContextDir();
           }
 
           job.setDefinition(flowFromBuildConfig);
@@ -205,28 +199,35 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           if (buildConfigProjectProperty != null) {
             long updatedBCResourceVersion = parseResourceVersion(buildConfig);
             long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
-            if (oldBCResourceVersion > updatedBCResourceVersion) {
+            BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
+            if (updatedBCResourceVersion <= oldBCResourceVersion &&
+              newProperty.getUid().equals(buildConfigProjectProperty.getUid()) &&
+              newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace()) &&
+              newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
+              newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
+              ) {
               return null;
             }
-            buildConfigProjectProperty.setResourceVersion(buildConfig.getMetadata().getResourceVersion());
+            buildConfigProjectProperty.setUid(newProperty.getUid());
+            buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
+            buildConfigProjectProperty.setName(newProperty.getName());
+            buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
+            buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
           } else {
             job.addProperty(
-              new BuildConfigProjectProperty(
-                buildConfig.getMetadata().getNamespace(),
-                buildConfig.getMetadata().getName(),
-                buildConfig.getMetadata().getUid(),
-                buildConfig.getMetadata().getResourceVersion(),
-                contextDir
-              )
+              new BuildConfigProjectProperty(buildConfig)
             );
           }
 
+          job.setConcurrentBuild(
+            !(buildConfig.getSpec().getRunPolicy().equals(SERIAL) ||
+              buildConfig.getSpec().getRunPolicy().equals(SERIAL_LATEST_ONLY))
+          );
+
           InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
-          Jenkins jenkins = Jenkins.getInstance();
-
           if (newJob) {
-            jenkins.createProjectFromXML(
+            Jenkins.getActiveInstance().createProjectFromXML(
               jobName,
               jobStream
             ).save();
@@ -260,14 +261,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         @Override
         public Void call() throws Exception {
           job.delete();
-          try {
-            Jenkins jenkins = Jenkins.getInstance();
-            if (jenkins != null) {
-              jenkins.reload();
-            }
-          } catch (ReactorException e) {
-            logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + job.getName() + " from BuildConfig " + NamespaceName.create(buildConfig));
-          }
+          Jenkins.getActiveInstance().rebuildDependencyGraphAsync();
           return null;
         }
       });

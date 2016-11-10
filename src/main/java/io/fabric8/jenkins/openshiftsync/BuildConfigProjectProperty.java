@@ -20,7 +20,7 @@ import hudson.model.Job;
 import hudson.model.JobProperty;
 import hudson.model.JobPropertyDescriptor;
 import io.fabric8.openshift.api.model.BuildConfig;
-import jenkins.model.ParameterizedJobMixIn;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -31,6 +31,8 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
  * - Namespace
  * - Build config name
  * - Build config uid
+ * - Build config resource version
+ * - Build config run policy
  */
 public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
@@ -43,15 +45,15 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
 
   private String resourceVersion;
 
-  private String contextDir;
+  private String buildRunPolicy;
 
   @DataBoundConstructor
-  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion, String contextDir) {
+  public BuildConfigProjectProperty(String namespace, String name, String uid, String resourceVersion, String buildRunPolicy) {
     this.namespace = namespace;
     this.name = name;
     this.uid = uid;
     this.resourceVersion = resourceVersion;
-    this.contextDir = contextDir;
+    this.buildRunPolicy = buildRunPolicy;
   }
 
   public BuildConfigProjectProperty(BuildConfig bc) {
@@ -60,12 +62,7 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
       bc.getMetadata().getName(),
       bc.getMetadata().getUid(),
       bc.getMetadata().getResourceVersion(),
-      bc.getSpec().getSource().getContextDir()
-    );
-  }
-
-  public String getUid() {
-    return uid;
+      bc.getSpec().getRunPolicy());
   }
 
   public BuildConfig getBuildConfig() {
@@ -76,12 +73,28 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     return null;
   }
 
+  public String getUid() {
+    return uid;
+  }
+
+  public void setUid(String uid) {
+    this.uid = uid;
+  }
+
   public String getName() {
     return name;
   }
 
+  public void setName(String name) {
+    this.name = name;
+  }
+
   public String getNamespace() {
     return namespace;
+  }
+
+  public void setNamespace(String namespace) {
+    this.namespace = namespace;
   }
 
   public String getResourceVersion() {
@@ -92,14 +105,18 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
     this.resourceVersion = resourceVersion;
   }
 
-  public String getContextDir() {
-    return contextDir;
+  public String getBuildRunPolicy() {
+    return buildRunPolicy;
+  }
+
+  public void setBuildRunPolicy(String buildRunPolicy) {
+    this.buildRunPolicy = buildRunPolicy;
   }
 
   @Extension
   public static final class DescriptorImpl extends JobPropertyDescriptor {
     public boolean isApplicable(Class<? extends Job> jobType) {
-      return ParameterizedJobMixIn.ParameterizedJob.class.isAssignableFrom(jobType);
+      return WorkflowJob.class.isAssignableFrom(jobType);
     }
   }
 }
