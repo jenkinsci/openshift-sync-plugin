@@ -52,7 +52,7 @@ public class NewBuildWatcher implements Watcher<Build> {
   public void start() {
     final BuildList builds;
     if (namespace != null && !namespace.isEmpty()) {
-      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withField("status", BuildPhases.NEW).list();
+      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
       buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
     } else {
       builds = getOpenShiftClient().builds().withField("status", BuildPhases.NEW).list();
