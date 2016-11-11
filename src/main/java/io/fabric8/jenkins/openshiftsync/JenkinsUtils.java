@@ -84,15 +84,16 @@ public class JenkinsUtils {
       return;
     }
 
+    WorkflowRun lastBuild = job.getLastBuild();
     switch (bcProp.getBuildRunPolicy()) {
       case SERIAL_LATEST_ONLY:
         cancelQueuedBuilds(bcProp.getUid());
-        if (job.getLastBuild().isBuilding()) {
+        if (lastBuild != null && lastBuild.isBuilding()) {
           return;
         }
         break;
       case SERIAL:
-        if (hasQueuedBuilds(bcProp.getUid()) || job.getLastBuild().isBuilding()) {
+        if (hasQueuedBuilds(bcProp.getUid()) || (lastBuild != null && lastBuild.isBuilding())) {
           return;
         }
         break;
