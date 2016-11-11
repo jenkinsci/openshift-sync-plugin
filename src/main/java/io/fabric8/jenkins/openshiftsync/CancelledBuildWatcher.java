@@ -16,12 +16,12 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.model.Job;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildList;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -88,7 +88,7 @@ public class CancelledBuildWatcher implements Watcher<Build> {
   private void buildModified(Build build) {
     if ((build.getStatus().getPhase().equals(NEW) || build.getStatus().getPhase().equals(RUNNING)) &&
       Boolean.TRUE.equals(build.getStatus().getCancelled())) {
-      Job job = getJobFromBuild(build);
+      WorkflowJob job = getJobFromBuild(build);
       if (job != null) {
         JenkinsUtils.cancelBuild(job, build);
       }

@@ -110,7 +110,7 @@ public class JenkinsUtils {
     job.scheduleBuild(cause);
   }
 
-  public synchronized static void cancelBuild(Job job, Build build) {
+  public synchronized static void cancelBuild(WorkflowJob job, Build build) {
     boolean cancelledQueuedBuild = cancelQueuedBuild(build);
     if (!cancelledQueuedBuild) {
       cancelRunningBuild(job, build);
@@ -118,17 +118,16 @@ public class JenkinsUtils {
     cancelOpenShiftBuild(build);
   }
 
-  private static boolean cancelRunningBuild(Job job, Build build) {
+  private static boolean cancelRunningBuild(WorkflowJob job, Build build) {
     String buildUid = build.getMetadata().getUid();
 
-    for (Object obj : job.getBuilds()) {
-      if (obj instanceof WorkflowRun) {
-        final WorkflowRun b = (WorkflowRun) obj;
-        BuildCause cause = b.getCause(BuildCause.class);
-        if (cause != null && cause.getUid().equals(buildUid)) {
-          b.doTerm();
-          return true;
+    for (WorkflowRun run : job.getBuilds()) {
+      BuildCause cause = run.getCause(BuildCause.class);
+      if (cause != null && cause.getUid().equals(buildUid)) {
+        if (run.isBuilding()) {
+          run.doTerm();
         }
+        return true;
       }
     }
 
