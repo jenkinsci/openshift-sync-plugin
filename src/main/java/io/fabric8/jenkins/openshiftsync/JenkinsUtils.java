@@ -84,16 +84,15 @@ public class JenkinsUtils {
       return;
     }
 
-    WorkflowRun lastBuild = job.getLastBuild();
     switch (bcProp.getBuildRunPolicy()) {
       case SERIAL_LATEST_ONLY:
         cancelQueuedBuilds(bcProp.getUid());
-        if (lastBuild != null && lastBuild.isBuilding()) {
+        if (job.isBuilding()) {
           return;
         }
         break;
       case SERIAL:
-        if (hasQueuedBuilds(bcProp.getUid()) || (lastBuild != null && lastBuild.isBuilding())) {
+        if (job.isInQueue() || job.isBuilding()) {
           return;
         }
         break;
@@ -182,20 +181,5 @@ public class JenkinsUtils {
       return null;
     }
     return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-  }
-
-  private static boolean hasQueuedBuilds(String bcUid) {
-    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
-    for (Queue.Item item : buildQueue.getItems()) {
-      for (Cause cause : item.getCauses()) {
-        if (cause instanceof BuildCause) {
-          BuildCause buildCause = (BuildCause) cause;
-          if (buildCause.getBuildConfigUid().equals(bcUid)) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
   }
 }
