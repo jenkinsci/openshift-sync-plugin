@@ -137,6 +137,29 @@ public class OpenShiftUtils {
   }
 
   /**
+   * Finds the Jenkins job display name for the given {@link BuildConfig}.
+   *
+   * @param bc the BuildConfig
+   * @return the jenkins job display name for the given BuildConfig
+   */
+  public static String jenkinsJobDisplayName(BuildConfig bc) {
+    String namespace = bc.getMetadata().getNamespace();
+    String name = bc.getMetadata().getName();
+    return jenkinsJobDisplayName(namespace, name);
+  }
+
+  /**
+   * Creates the Jenkins Job display name for the given buildConfigName
+   *
+   * @param namespace the namespace of the build
+   * @param buildConfigName the name of the {@link BuildConfig} in in the namespace
+   * @return the jenkins job display name for the given namespace and name
+   */
+  public static String jenkinsJobDisplayName(String namespace, String buildConfigName) {
+    return namespace + "/" + buildConfigName;
+  }
+
+  /**
    * Gets the current namespace running Jenkins inside or returns a reasonable default
    *
    * @param configuredNamespace the optional configured namespace
