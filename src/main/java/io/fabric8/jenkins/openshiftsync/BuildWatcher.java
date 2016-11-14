@@ -147,7 +147,7 @@ public class BuildWatcher implements Watcher<Build> {
     }
   }
 
-  private synchronized void buildModified(Build build) {
+  private static synchronized void buildModified(Build build) {
     if ((build.getStatus().getPhase().equals(NEW) || build.getStatus().getPhase().equals(RUNNING)) &&
       Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       WorkflowJob job = getJobFromBuild(build);
