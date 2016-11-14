@@ -36,6 +36,7 @@ import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildToPending;
 import static org.apache.commons.lang.StringUtils.isBlank;
 
 /**
@@ -107,7 +108,9 @@ public class JenkinsUtils {
     updateSourceCredentials(buildConfig);
 
     Cause cause = new BuildCause(build, bcProp.getUid());
-    job.scheduleBuild(cause);
+    if (job.scheduleBuild(cause)) {
+      updateOpenShiftBuildToPending(build);
+    }
   }
 
   public synchronized static void cancelBuild(WorkflowJob job, Build build) {

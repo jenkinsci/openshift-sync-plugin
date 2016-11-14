@@ -51,6 +51,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_DEFAULT_NAMESPACE;
 
 /**
@@ -267,6 +268,14 @@ public class OpenShiftUtils {
     getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
       .edit()
       .editStatus().withPhase(CANCELLED).endStatus()
+      .done();
+  }
+
+  public static void updateOpenShiftBuildToPending(Build build) {
+    logger.info("setting build to pending in namespace " + build.getMetadata().getNamespace() + " with name: " + build.getMetadata().getName());
+    getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
+      .edit()
+      .editStatus().withPhase(PENDING).endStatus()
       .done();
   }
 
