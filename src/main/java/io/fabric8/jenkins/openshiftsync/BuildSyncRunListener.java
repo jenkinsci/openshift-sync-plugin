@@ -60,11 +60,10 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
  */
 @Extension
 public class BuildSyncRunListener extends RunListener<Run> {
-
   private static final Logger logger = Logger.getLogger(BuildSyncRunListener.class.getName());
 
   private long pollPeriodMs = 1000;
-  private String defaultNamespace;
+  private String namespace;
 
   private transient Set<Run> runsToPoll = new CopyOnWriteArraySet<>();
 
@@ -106,7 +105,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   private void init() {
-    defaultNamespace = OpenShiftUtils.getNamespaceOrUseDefault(defaultNamespace, getOpenShiftClient());
+    namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace, getOpenShiftClient());
   }
 
   @Override
@@ -200,7 +199,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       return;
     }
 
-    String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), defaultNamespace);
+    String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), namespace);
     String buildUrl = joinPaths(rootUrl, run.getUrl());
     String logsUrl = joinPaths(buildUrl, "/consoleText");
 
