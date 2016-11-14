@@ -45,10 +45,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_LOG_URL;
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STATUS_JSON;
-import static io.fabric8.jenkins.openshiftsync.NewBuildWatcher.buildAdded;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.BuildWatcher.buildAdded;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
@@ -249,9 +251,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
     logger.info("Patching build in namespace " + cause.getNamespace() + " with name: " + cause.getName() + " phase: " + phase);
     getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
       .editMetadata()
-        .addToAnnotations(ANNOTATION_JENKINS_STATUS_JSON, json)
-        .addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, buildUrl)
-        .addToAnnotations(ANNOTATION_JENKINS_LOG_URL, logsUrl)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
       .endMetadata()
       .editStatus()
         .withPhase(phase)
@@ -309,13 +311,13 @@ public class BuildSyncRunListener extends RunListener<Run> {
       return;
     }
     List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
-      .withField("status", BuildPhases.NEW).withLabel("openshift.io/build-config.name", bcp.getName()).list().getItems();
+      .withField("status", BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
     Collections.sort(builds, new Comparator<Build>() {
       @Override
       public int compare(Build b1, Build b2) {
         return Long.compare(
-          Long.parseLong(b1.getMetadata().getAnnotations().get("openshift.io/build.number")),
-          Long.parseLong(b2.getMetadata().getAnnotations().get("openshift.io/build.number"))
+          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
         );
       }
     });

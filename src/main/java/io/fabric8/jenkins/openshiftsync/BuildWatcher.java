@@ -34,33 +34,26 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
-public class NewBuildWatcher implements Watcher<Build> {
-  private static final Logger logger = Logger.getLogger(NewBuildWatcher.class.getName());
+public class BuildWatcher implements Watcher<Build> {
+  private static final Logger logger = Logger.getLogger(BuildWatcher.class.getName());
+
   private final String namespace;
   private Watch buildsWatch;
 
-  public NewBuildWatcher(String defaultNamespace) {
-    this.namespace = defaultNamespace;
+  public BuildWatcher(String namespace) {
+    this.namespace = namespace;
   }
 
   public void start() {
-    final BuildList builds;
-    if (namespace != null && !namespace.isEmpty()) {
-      builds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
-      buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
-    } else {
-      builds = getOpenShiftClient().builds().withField("status", BuildPhases.NEW).list();
-      buildsWatch = getOpenShiftClient().builds().withField("status", BuildPhases.NEW).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(this);
-    }
-
-    // lets process the initial state
-    logger.info("Now handling startup builds!!");
     // lets do this in a background thread to avoid errors like:
     //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
     Runnable task = new SafeTimerTask() {
@@ -77,11 +70,13 @@ public class NewBuildWatcher implements Watcher<Build> {
             // ignore
           }
         }
-        logger.info("loading initial Builds resources");
+        logger.info("loading initial Build resources");
 
         try {
+          BuildList builds = getOpenShiftClient().builds().inNamespace(namespace).list();
           onInitialBuilds(builds);
-          logger.info("loaded initial Builds resources");
+          logger.info("loaded initial Build resources");
+          buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
         }
@@ -110,8 +105,24 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  public synchronized void onInitialBuilds(BuildList buildList) {
+  @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
+  @Override
+  public void eventReceived(Action action, Build build) {
+    try {
+      switch (action) {
+        case ADDED:
+          buildAdded(build);
+          break;
+        case MODIFIED:
+          buildModified(build);
+          break;
+      }
+    } catch (Exception e) {
+      logger.log(Level.WARNING, "Caught: " + e, e);
+    }
+  }
 
+  public synchronized static void onInitialBuilds(BuildList buildList) {
     List<Build> items = buildList.getItems();
     if (items != null) {
 
@@ -119,8 +130,8 @@ public class NewBuildWatcher implements Watcher<Build> {
         @Override
         public int compare(Build b1, Build b2) {
           return Long.compare(
-            Long.parseLong(b1.getMetadata().getAnnotations().get("openshift.io/build.number")),
-            Long.parseLong(b2.getMetadata().getAnnotations().get("openshift.io/build.number"))
+            Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+            Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
           );
         }
       });
@@ -135,17 +146,13 @@ public class NewBuildWatcher implements Watcher<Build> {
     }
   }
 
-  @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
-  @Override
-  public void eventReceived(Action action, Build build) {
-    try {
-      switch (action) {
-        case ADDED:
-          buildAdded(build);
-          break;
+  private synchronized void buildModified(Build build) {
+    if ((build.getStatus().getPhase().equals(NEW) || build.getStatus().getPhase().equals(RUNNING)) &&
+      Boolean.TRUE.equals(build.getStatus().getCancelled())) {
+      WorkflowJob job = getJobFromBuild(build);
+      if (job != null) {
+        JenkinsUtils.cancelBuild(job, build);
       }
-    } catch (Exception e) {
-      logger.log(Level.WARNING, "Caught: " + e, e);
     }
   }
 
