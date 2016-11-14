@@ -40,9 +40,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private String namespace;
 
-  private transient NewBuildWatcher newBuildWatcher;
-
-  private transient CancelledBuildWatcher cancelledBuildWatcher;
+  private transient BuildWatcher buildWatcher;
 
   private transient BuildConfigWatcher buildConfigWatcher;
 
@@ -105,11 +103,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       if (buildConfigWatcher != null) {
         buildConfigWatcher.stop();
       }
-      if (newBuildWatcher != null) {
-        newBuildWatcher.stop();
-      }
-      if (cancelledBuildWatcher != null) {
-        cancelledBuildWatcher.stop();
+      if (buildWatcher != null) {
+        buildWatcher.stop();
       }
       OpenShiftUtils.shutdownOpenShiftClient();
       return;
@@ -123,10 +118,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
         buildConfigWatcher.start(new Callable<Void>() {
           @Override
           public Void call() throws Exception {
-            newBuildWatcher = new NewBuildWatcher(namespace);
-            newBuildWatcher.start();
-            cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
-            cancelledBuildWatcher.start();
+            buildWatcher = new BuildWatcher(namespace);
+            buildWatcher.start();
 
             return null;
           }

@@ -48,7 +48,7 @@ import java.util.logging.Logger;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_LOG_URL;
 import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STATUS_JSON;
-import static io.fabric8.jenkins.openshiftsync.NewBuildWatcher.buildAdded;
+import static io.fabric8.jenkins.openshiftsync.BuildWatcher.buildAdded;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
