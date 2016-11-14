@@ -162,6 +162,10 @@ public class BuildWatcher implements Watcher<Build> {
       return;
     }
 
+    if (!build.getStatus().getPhase().equals(NEW)) {
+      return;
+    }
+
     WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
       triggerJob(job, build);
