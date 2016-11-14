@@ -37,6 +37,7 @@ import java.util.logging.Logger;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
@@ -151,7 +152,7 @@ public class BuildWatcher implements Watcher<Build> {
       Boolean.TRUE.equals(build.getStatus().getCancelled())) {
       WorkflowJob job = getJobFromBuild(build);
       if (job != null) {
-        JenkinsUtils.cancelBuild(job, build);
+        cancelBuild(job, build);
       }
     }
   }
