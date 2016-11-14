@@ -55,6 +55,7 @@ import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_DEFAULT_NAMESPACE;
+import static java.util.logging.Level.INFO;
 
 /**
  */
@@ -205,7 +206,7 @@ public class OpenShiftUtils {
         }
       }
     } catch (Exception e) {
-      logger.log(Level.WARNING, "Could not find Route for namespace " + namespace + " service " + serviceName + ". " + e, e);
+      logger.log(Level.WARNING, "Could not find Route for service " + namespace + "/" + serviceName + ". " + e, e);
     }
     // lets try the portalIP instead
     try {
@@ -220,7 +221,7 @@ public class OpenShiftUtils {
         }
       }
     } catch (Exception e) {
-      logger.log(Level.WARNING, "Could not find Route for namespace " + namespace + " service " + serviceName + ". " + e, e);
+      logger.log(Level.WARNING, "Could not find Route for service " + namespace + "/" + serviceName + ". " + e, e);
     }
 
     // lets default to the service DNS name
@@ -266,7 +267,7 @@ public class OpenShiftUtils {
   }
 
   public static void updateOpenShiftBuildPhase(Build build, String phase) {
-    logger.info("setting build to pending in namespace " + build.getMetadata().getNamespace() + " with name: " + build.getMetadata().getName());
+    logger.log(INFO, "setting build to {} in namespace {}/{}", new Object[]{phase, build.getMetadata().getNamespace(), build.getMetadata().getName()});
     getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
       .edit()
       .editStatus().withPhase(phase).endStatus()
