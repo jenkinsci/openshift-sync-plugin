@@ -59,8 +59,8 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private final String namespace;
   private Watch buildConfigWatch;
 
-  public BuildConfigWatcher(String defaultNamespace) {
-    this.namespace = defaultNamespace;
+  public BuildConfigWatcher(String namespace) {
+    this.namespace = namespace;
   }
 
   public void start(final Callable<Void> completionCallback) {
@@ -176,7 +176,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
         @Override
         public Void call() throws Exception {
-          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, namespace);
+          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig);
           WorkflowJob job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
           boolean newJob = job == null;
           if (newJob) {

@@ -39,21 +39,21 @@ public class PipelineJobListener extends ItemListener {
   private static final Logger logger = Logger.getLogger(PipelineJobListener.class.getName());
 
   private String server;
-  private String defaultNamespace;
+  private String namespace;
 
   public PipelineJobListener() {
     init();
   }
 
   @DataBoundConstructor
-  public PipelineJobListener(String server, String defaultNamespace) {
+  public PipelineJobListener(String server, String namespace) {
     this.server = server;
-    this.defaultNamespace = defaultNamespace;
+    this.namespace = namespace;
     init();
   }
 
   private void init() {
-    defaultNamespace = OpenShiftUtils.getNamespaceOrUseDefault(defaultNamespace, getOpenShiftClient());
+    namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace, getOpenShiftClient());
   }
 
   @Override
@@ -77,7 +77,7 @@ public class PipelineJobListener extends ItemListener {
         && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getNamespace())
         && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getName())) {
 
-        NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), defaultNamespace);
+        NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), namespace);
         logger.info("Deleting BuildConfig " + buildName);
 
         String namespace = buildName.getNamespace();
