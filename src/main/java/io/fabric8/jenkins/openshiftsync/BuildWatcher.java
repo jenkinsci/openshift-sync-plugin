@@ -22,6 +22,7 @@ import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildList;
+import io.fabric8.openshift.api.model.BuildStatus;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -34,15 +35,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
-import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
-import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isNew;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
 import static java.net.HttpURLConnection.HTTP_GONE;
 
 public class BuildWatcher implements Watcher<Build> {
@@ -149,8 +151,10 @@ public class BuildWatcher implements Watcher<Build> {
   }
 
   private static synchronized void buildModified(Build build) {
-    if ((build.getStatus().getPhase().equals(NEW) || build.getStatus().getPhase().equals(PENDING) || build.getStatus().getPhase().equals(RUNNING)) &&
-      Boolean.TRUE.equals(build.getStatus().getCancelled())) {
+    BuildStatus status = build.getStatus();
+    if (status != null &&
+      isCancellable(status) &&
+      isCancelled(status)) {
       WorkflowJob job = getJobFromBuild(build);
       if (job != null) {
         cancelBuild(job, build);
@@ -159,13 +163,15 @@ public class BuildWatcher implements Watcher<Build> {
   }
 
   public static synchronized void buildAdded(Build build) throws IOException {
-    if (build.getStatus() != null && Boolean.TRUE.equals(build.getStatus().getCancelled())) {
-      cancelOpenShiftBuild(build);
-      return;
-    }
-
-    if (!build.getStatus().getPhase().equals(NEW)) {
-      return;
+    BuildStatus status = build.getStatus();
+    if (status != null) {
+      if (isCancelled(status)) {
+        updateOpenShiftBuildPhase(build, CANCELLED);
+        return;
+      }
+      if (!isNew(status)) {
+        return;
+      }
     }
 
     WorkflowJob job = getJobFromBuild(build);

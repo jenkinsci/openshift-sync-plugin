@@ -31,12 +31,13 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import java.io.IOException;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildToPending;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
 import static org.apache.commons.lang.StringUtils.isBlank;
 
 /**
@@ -109,7 +110,7 @@ public class JenkinsUtils {
 
     Cause cause = new BuildCause(build, bcProp.getUid());
     if (job.scheduleBuild(cause)) {
-      updateOpenShiftBuildToPending(build);
+      updateOpenShiftBuildPhase(build, PENDING);
     }
   }
 
@@ -118,7 +119,7 @@ public class JenkinsUtils {
     if (!cancelledQueuedBuild) {
       cancelRunningBuild(job, build);
     }
-    cancelOpenShiftBuild(build);
+    updateOpenShiftBuildPhase(build, CANCELLED);
   }
 
   private static boolean cancelRunningBuild(WorkflowJob job, Build build) {
@@ -159,12 +160,13 @@ public class JenkinsUtils {
           BuildCause buildCause = (BuildCause) cause;
           if (buildCause.getBuildConfigUid().equals(bcUid)) {
             if (buildQueue.cancel(item)) {
-              cancelOpenShiftBuild(
+              updateOpenShiftBuildPhase(
                 new BuildBuilder()
                   .withNewMetadata()
                   .withNamespace(buildCause.getNamespace())
                   .withName(buildCause.getName())
-                  .and().build()
+                  .and().build(),
+                CANCELLED
               );
             }
           }

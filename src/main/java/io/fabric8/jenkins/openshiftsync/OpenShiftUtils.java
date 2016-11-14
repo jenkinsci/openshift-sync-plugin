@@ -30,6 +30,7 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
+import io.fabric8.openshift.api.model.BuildStatus;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteList;
@@ -50,8 +51,9 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_DEFAULT_NAMESPACE;
 
 /**
@@ -263,19 +265,11 @@ public class OpenShiftUtils {
     gitSource.setRef(ref);
   }
 
-  public static void cancelOpenShiftBuild(Build build) {
-    logger.info("cancelling build in namespace " + build.getMetadata().getNamespace() + " with name: " + build.getMetadata().getName());
-    getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
-      .edit()
-      .editStatus().withPhase(CANCELLED).endStatus()
-      .done();
-  }
-
-  public static void updateOpenShiftBuildToPending(Build build) {
+  public static void updateOpenShiftBuildPhase(Build build, String phase) {
     logger.info("setting build to pending in namespace " + build.getMetadata().getNamespace() + " with name: " + build.getMetadata().getName());
     getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
       .edit()
-      .editStatus().withPhase(PENDING).endStatus()
+      .editStatus().withPhase(phase).endStatus()
       .done();
   }
 
@@ -327,6 +321,19 @@ public class OpenShiftUtils {
     statelessMapper.addMixInAnnotations(ObjectMeta.class, ObjectMetaMixIn.class);
     statelessMapper.addMixInAnnotations(ReplicationController.class, StatelessReplicationControllerMixIn.class);
     return statelessMapper.writeValueAsString(obj);
+  }
+
+  public static boolean isCancellable(BuildStatus buildStatus) {
+    String phase = buildStatus.getPhase();
+    return phase.equals(NEW) || phase.equals(PENDING) || phase.equals(RUNNING);
+  }
+
+  public static boolean isNew(BuildStatus buildStatus) {
+    return buildStatus.getPhase().equals(NEW);
+  }
+
+  public static boolean isCancelled(BuildStatus status) {
+    return Boolean.TRUE.equals(status.getCancelled());
   }
 
   abstract class StatelessReplicationControllerMixIn extends ReplicationController {
