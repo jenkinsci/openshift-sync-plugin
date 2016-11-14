@@ -36,6 +36,7 @@ import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.cancelOpenShiftBuild;
@@ -129,8 +130,8 @@ public class BuildWatcher implements Watcher<Build> {
         @Override
         public int compare(Build b1, Build b2) {
           return Long.compare(
-            Long.parseLong(b1.getMetadata().getAnnotations().get("openshift.io/build.number")),
-            Long.parseLong(b2.getMetadata().getAnnotations().get("openshift.io/build.number"))
+            Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+            Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
           );
         }
       });
