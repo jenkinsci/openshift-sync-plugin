@@ -20,11 +20,19 @@ import org.acegisecurity.context.SecurityContextHolder;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static hudson.Util.fixNull;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_DATA_PASSWORD;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_DATA_USERNAME;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_TYPE_BASICAUTH;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_TYPE_OPAQUE;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_TYPE_SSH;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static org.apache.commons.lang.StringUtils.isNotBlank;
 
 public class CredentialsUtils {
 
@@ -70,27 +78,73 @@ public class CredentialsUtils {
   }
 
   private static Credentials secretToCredentials(Secret secret) {
+    String namespace = secret.getMetadata().getNamespace();
+    String name = secret.getMetadata().getName();
+    final Map<String, String> data = secret.getData();
     switch (secret.getType()) {
-      case "kubernetes.io/basic-auth":
-        return new UsernamePasswordCredentialsImpl(
-          CredentialsScope.GLOBAL,
-          secret.getMetadata().getNamespace() + "-" + secret.getMetadata().getName(),
-          secret.getMetadata().getNamespace() + "-" + secret.getMetadata().getName(),
-          new String(Base64.decode(fixNull(secret.getData().get("username"))), StandardCharsets.UTF_8),
-          new String(Base64.decode(fixNull(secret.getData().get("password"))), StandardCharsets.UTF_8)
+      case OPENSHIFT_SECRETS_TYPE_OPAQUE:
+        String usernameData = data.get(OPENSHIFT_SECRETS_DATA_USERNAME);
+        String passwordData = data.get(OPENSHIFT_SECRETS_DATA_PASSWORD);
+        if (isNotBlank(usernameData) && isNotBlank(passwordData)) {
+          return newUsernamePasswordCredentials(
+            namespace + "-" + name,
+            usernameData,
+            passwordData
+          );
+        }
+
+        String sshKeyData = data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY);
+        if (isNotBlank(sshKeyData)) {
+          return newSSHUserCredential(
+            namespace + "-" + name,
+            data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
+            sshKeyData
+          );
+        }
+
+        logger.log(
+          Level.WARNING,
+          "Opaque secret either requires {0} and {1} fields for basic auth or {2} field for SSH key",
+          new Object[]{OPENSHIFT_SECRETS_DATA_USERNAME, OPENSHIFT_SECRETS_DATA_PASSWORD, OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY}
         );
-      case "kubernetes.io/ssh-auth":
-        return new BasicSSHUserPrivateKey(
-          CredentialsScope.GLOBAL,
-          secret.getMetadata().getNamespace() + "-" + secret.getMetadata().getName(),
-          fixNull(secret.getData().get("username")),
-          new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(new String(Base64.decode(fixNull(secret.getData().get("ssh-privatekey"))), StandardCharsets.UTF_8)),
-          null,
-          secret.getMetadata().getNamespace() + "-" + secret.getMetadata().getName()
+        return null;
+      case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
+        return newUsernamePasswordCredentials(
+          name + "-" + namespace,
+          data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
+          data.get(OPENSHIFT_SECRETS_DATA_PASSWORD)
         );
+      case OPENSHIFT_SECRETS_TYPE_SSH:
+        return newSSHUserCredential(
+          name + "-" + namespace,
+          data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
+          data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY));
       default:
         logger.log(Level.WARNING, "Unknown secret type: " + secret.getType());
         return null;
     }
+  }
+
+  private static Credentials newSSHUserCredential(String secretName, String username, String sshKeyData) {
+    return new BasicSSHUserPrivateKey(
+      CredentialsScope.GLOBAL,
+      secretName,
+      fixNull(username),
+      new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
+        new String(Base64.decode(sshKeyData), StandardCharsets.UTF_8)
+      ),
+      null,
+      secretName
+    );
+  }
+
+  private static Credentials newUsernamePasswordCredentials(String secretName, String usernameData, String passwordData) {
+    return new UsernamePasswordCredentialsImpl(
+      CredentialsScope.GLOBAL,
+      secretName,
+      secretName,
+      new String(Base64.decode(usernameData), StandardCharsets.UTF_8),
+      new String(Base64.decode(passwordData), StandardCharsets.UTF_8)
+    );
   }
 }
