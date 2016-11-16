@@ -16,7 +16,7 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import hudson.model.Computer;
+import hudson.BulkChange;
 import hudson.model.Job;
 import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
@@ -82,27 +82,6 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     Runnable task = new SafeTimerTask() {
       @Override
       public void doRun() {
-        logger.info("Waiting for Jenkins to be started");
-        while (true) {
-          Computer[] computers = Jenkins.getActiveInstance().getComputers();
-          boolean ready = false;
-          for (Computer c : computers) {
-            // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
-            // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
-            if (c.isAcceptingTasks()) {
-              ready = true;
-              break;
-            }
-          }
-          if (ready) {
-            break;
-          }
-          try {
-            Thread.sleep(500);
-          } catch (InterruptedException e) {
-            // ignore
-          }
-        }
         logger.info("loading initial BuildConfigs resources");
 
         try {
@@ -184,6 +163,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
           if (newJob) {
             job = new WorkflowJob(Jenkins.getActiveInstance(), jobName);
           }
+          BulkChange bk = new BulkChange(job);
 
           job.setDisplayName(jenkinsJobDisplayName(buildConfig));
 
@@ -242,6 +222,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             job.save();
             logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
           }
+          bk.commit();
           return null;
         }
       });

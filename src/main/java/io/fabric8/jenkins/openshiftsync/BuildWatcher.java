@@ -23,7 +23,6 @@ import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.BuildStatus;
-import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
@@ -37,6 +36,7 @@ import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
@@ -46,6 +46,7 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isNew;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
 import static java.net.HttpURLConnection.HTTP_GONE;
+import static java.util.logging.Level.WARNING;
 
 public class BuildWatcher implements Watcher<Build> {
   private static final Logger logger = Logger.getLogger(BuildWatcher.class.getName());
@@ -63,17 +64,6 @@ public class BuildWatcher implements Watcher<Build> {
     Runnable task = new SafeTimerTask() {
       @Override
       public void doRun() {
-        logger.info("Waiting for Jenkins to be started");
-        while (true) {
-          if (Jenkins.getActiveInstance().isAcceptingTasks()) {
-            break;
-          }
-          try {
-            Thread.sleep(500);
-          } catch (InterruptedException e) {
-            // ignore
-          }
-        }
         logger.info("loading initial Build resources");
 
         try {
@@ -122,7 +112,7 @@ public class BuildWatcher implements Watcher<Build> {
           break;
       }
     } catch (Exception e) {
-      logger.log(Level.WARNING, "Caught: " + e, e);
+      logger.log(WARNING, "Caught: " + e, e);
     }
   }
 
@@ -177,6 +167,32 @@ public class BuildWatcher implements Watcher<Build> {
     WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
       triggerJob(job, build);
+    }
+  }
+
+  public static synchronized void maybeScheduleNext(WorkflowJob job) {
+    BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
+    if (bcp == null) {
+      return;
+    }
+    List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
+      .withField("status", BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
+    Collections.sort(builds, new Comparator<Build>() {
+      @Override
+      public int compare(Build b1, Build b2) {
+        return Long.compare(
+          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
+        );
+      }
+    });
+
+    for (Build b : builds) {
+      try {
+        buildAdded(b);
+      } catch (IOException e) {
+        logger.log(WARNING, "Failed to handle new build request", e);
+      }
     }
   }
 

@@ -16,8 +16,10 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.Extension;
+import hudson.model.Computer;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import jenkins.model.GlobalConfiguration;
+import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
@@ -113,6 +115,28 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       try {
         OpenShiftUtils.initializeOpenShiftClient(server);
         this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
+
+        logger.info("Waiting for Jenkins to be started");
+        while (true) {
+          Computer[] computers = Jenkins.getActiveInstance().getComputers();
+          boolean ready = false;
+          for (Computer c : computers) {
+            // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
+            // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
+            if (c.isAcceptingTasks()) {
+              ready = true;
+              break;
+            }
+          }
+          if (ready) {
+            break;
+          }
+          try {
+            Thread.sleep(500);
+          } catch (InterruptedException e) {
+            // ignore
+          }
+        }
 
         buildConfigWatcher = new BuildConfigWatcher(namespace);
         buildConfigWatcher.start(new Callable<Void>() {
