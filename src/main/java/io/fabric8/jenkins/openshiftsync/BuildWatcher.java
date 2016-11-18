@@ -75,10 +75,10 @@ public class BuildWatcher implements Watcher<Build> {
         logger.info("loading initial Build resources");
 
         try {
-          BuildList builds = getOpenShiftClient().builds().inNamespace(namespace).list();
-          onInitialBuilds(builds);
+          BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
+          onInitialBuilds(newBuilds);
           logger.info("loaded initial Build resources");
-          buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
+          buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
         }
@@ -138,11 +138,58 @@ public class BuildWatcher implements Watcher<Build> {
         }
       });
 
-      for (Build build : items) {
-        try {
-          buildAdded(build);
-        } catch (IOException e) {
-          e.printStackTrace();
+      // We need to sort the builds into their build configs so we can handle build run policies correctly.
+      Map<String, BuildConfig> buildConfigMap = new HashMap<>();
+      Map<BuildConfig, List<Build>> buildConfigBuildMap = new HashMap<>(items.size());
+      for (Build b : items) {
+        String buildConfigName = b.getStatus().getConfig().getName();
+        if (StringUtils.isEmpty(buildConfigName)) {
+          continue;
+        }
+        String namespace = b.getMetadata().getNamespace();
+        String bcMapKey = namespace + "/" + buildConfigName;
+        BuildConfig bc = buildConfigMap.get(bcMapKey);
+        if (bc == null) {
+          bc = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+          if (bc == null) {
+            continue;
+          }
+          buildConfigMap.put(bcMapKey, bc);
+        }
+        List<Build> bcBuilds = buildConfigBuildMap.get(bc);
+        if (bcBuilds == null) {
+          bcBuilds = new ArrayList<>();
+          buildConfigBuildMap.put(bc, bcBuilds);
+        }
+        bcBuilds.add(b);
+      }
+
+      // Now handle the builds.
+      for (Map.Entry<BuildConfig, List<Build>> buildConfigBuilds : buildConfigBuildMap.entrySet()) {
+        BuildConfig bc = buildConfigBuilds.getKey();
+        if (bc.getMetadata() == null) {
+          // Should never happen but let's be safe...
+          continue;
+        }
+        WorkflowJob job = getJobFromBuildConfigUid(bc.getMetadata().getUid());
+        BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
+        if (bcp == null) {
+          continue;
+        }
+        boolean isSerialLatestOnly = bcp.getBuildRunPolicy().equals(SERIAL_LATEST_ONLY);
+        List<Build> builds = buildConfigBuilds.getValue();
+        for (int i = 0; i < builds.size(); i++) {
+          Build b = builds.get(i);
+          if (isSerialLatestOnly && i < builds.size() - 1) {
+            cancelQueuedBuild(job, b);
+            updateOpenShiftBuildPhase(b, CANCELLED);
+            continue;
+          }
+          try {
+            buildAdded(b);
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
         }
       }
     }

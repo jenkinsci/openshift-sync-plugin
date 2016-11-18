@@ -97,7 +97,7 @@ public class JenkinsUtils {
 
     switch (bcProp.getBuildRunPolicy()) {
       case SERIAL_LATEST_ONLY:
-        cancelQueuedBuilds(bcProp.getUid());
+        cancelQueuedBuilds(job, bcProp.getUid());
         if (job.isBuilding()) {
           return;
         }
@@ -117,37 +117,75 @@ public class JenkinsUtils {
 
     updateSourceCredentials(buildConfig);
 
-    Cause cause = new BuildCause(build, bcProp.getUid());
-    if (job.scheduleBuild(cause)) {
+    if (job.scheduleBuild2(0, new CauseAction(new BuildCause(build, bcProp.getUid()))) != null) {
       updateOpenShiftBuildPhase(build, PENDING);
     }
   }
 
   public synchronized static void cancelBuild(WorkflowJob job, Build build) {
-    boolean cancelledQueuedBuild = cancelQueuedBuild(build);
-    if (!cancelledQueuedBuild) {
+    if (!cancelQueuedBuild(job, build)) {
       cancelRunningBuild(job, build);
     }
-    updateOpenShiftBuildPhase(build, CANCELLED);
+    try {
+      updateOpenShiftBuildPhase(build, CANCELLED);
+    } catch (Exception e) {
+      throw e;
+    }
+  }
+
+  private static WorkflowRun getRun(WorkflowJob job, String buildUid) {
+    for (WorkflowRun run : job.getBuilds()) {
+      BuildCause cause = run.getCause(BuildCause.class);
+      if (cause != null && cause.getUid().equals(buildUid)) {
+        return run;
+      }
+    }
+    return null;
   }
 
   private static boolean cancelRunningBuild(WorkflowJob job, Build build) {
     String buildUid = build.getMetadata().getUid();
-
-    for (WorkflowRun run : job.getBuilds()) {
-      BuildCause cause = run.getCause(BuildCause.class);
-      if (cause != null && cause.getUid().equals(buildUid)) {
-        if (run.isBuilding()) {
-          run.doTerm();
-        }
-        return true;
-      }
+    WorkflowRun run = getRun(job, buildUid);
+    if (run != null && run.isBuilding()) {
+      terminateRun(run);
+      return true;
     }
-
     return false;
   }
 
-  public static boolean cancelQueuedBuild(Build build) {
+  private static boolean cancelNotYetStartedBuild(WorkflowJob job, Build build) {
+    String buildUid = build.getMetadata().getUid();
+    WorkflowRun run = getRun(job, buildUid);
+    if (run != null && run.hasntStartedYet()) {
+      terminateRun(run);
+      return true;
+    }
+    return false;
+  }
+
+  private static void cancelNotYetStartedBuilds(WorkflowJob job, String bcUid) {
+    cancelQueuedBuilds(job, bcUid);
+    for (WorkflowRun run : job.getBuilds()) {
+      if (run != null && run.hasntStartedYet()) {
+        BuildCause cause = run.getCause(BuildCause.class);
+        if (cause != null && cause.getBuildConfigUid().equals(bcUid)) {
+          terminateRun(run);
+        }
+      }
+    }
+  }
+
+  private static void terminateRun(final WorkflowRun run) {
+    run.doTerm();
+    Timer.get().schedule(new Runnable() {
+      @Override
+      public void run() {
+        run.doKill();
+      }
+    }, 5, TimeUnit.SECONDS);
+  }
+
+  public static boolean cancelQueuedBuild(WorkflowJob job, Build build) {
     String buildUid = build.getMetadata().getUid();
     Queue buildQueue = Jenkins.getActiveInstance().getQueue();
     for (Queue.Item item : buildQueue.getItems()) {
@@ -158,26 +196,22 @@ public class JenkinsUtils {
         }
       }
     }
-    return false;
+    return cancelNotYetStartedBuild(job, build);
   }
 
-  public static void cancelQueuedBuilds(String bcUid) {
+  public static void cancelQueuedBuilds(WorkflowJob job, String bcUid) {
     Queue buildQueue = Jenkins.getActiveInstance().getQueue();
     for (Queue.Item item : buildQueue.getItems()) {
       for (Cause cause : item.getCauses()) {
         if (cause instanceof BuildCause) {
           BuildCause buildCause = (BuildCause) cause;
           if (buildCause.getBuildConfigUid().equals(bcUid)) {
-            if (buildQueue.cancel(item)) {
-              updateOpenShiftBuildPhase(
-                new BuildBuilder()
-                  .withNewMetadata()
-                  .withNamespace(buildCause.getNamespace())
-                  .withName(buildCause.getName())
-                  .and().build(),
-                CANCELLED
-              );
-            }
+            Build build = new BuildBuilder()
+              .withNewMetadata()
+              .withNamespace(buildCause.getNamespace())
+              .withName(buildCause.getName())
+              .and().build();
+            cancelQueuedBuild(job, build);
           }
         }
       }
