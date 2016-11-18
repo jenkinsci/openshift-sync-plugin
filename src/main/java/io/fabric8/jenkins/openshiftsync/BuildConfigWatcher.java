@@ -180,8 +180,11 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             job.addTrigger(trigger);
           }
 
+          String existingBuildRunPolicy = null;
+
           BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
           if (buildConfigProjectProperty != null) {
+            existingBuildRunPolicy = buildConfigProjectProperty.getBuildRunPolicy();
             long updatedBCResourceVersion = parseResourceVersion(buildConfig);
             long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
             BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
@@ -222,6 +225,9 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
             job.updateByXml(source);
             job.save();
             logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
+            if (existingBuildRunPolicy != null && !existingBuildRunPolicy.equals(buildConfigProjectProperty.getBuildRunPolicy())) {
+              maybeScheduleNext(job);
+            }
           }
           bk.commit();
           return null;
