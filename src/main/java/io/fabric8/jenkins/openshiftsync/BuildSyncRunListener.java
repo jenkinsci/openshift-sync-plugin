@@ -174,7 +174,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
   }
 
-  protected void pollRun(Run run) {
+  protected synchronized void pollRun(Run run) {
     if (!(run instanceof WorkflowRun)) {
       throw new IllegalStateException("Cannot poll a non-workflow run");
     }
