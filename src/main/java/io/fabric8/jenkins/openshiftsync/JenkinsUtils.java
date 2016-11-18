@@ -16,6 +16,7 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.model.Cause;
+import hudson.model.CauseAction;
 import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.Run;
@@ -24,17 +25,25 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
+import jenkins.util.Timer;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
+import static io.fabric8.jenkins.openshiftsync.BuildWatcher.buildAdded;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
@@ -185,5 +194,45 @@ public class JenkinsUtils {
       return null;
     }
     return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+  }
+
+  public static WorkflowJob getJobFromBuildConfigUid(String bcUid) {
+    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(bcUid);
+  }
+
+  public static void maybeScheduleNext(WorkflowJob job) {
+    BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
+    if (bcp == null) {
+      return;
+    }
+    List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
+      .withField("status", BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
+    Collections.sort(builds, new Comparator<Build>() {
+      @Override
+      public int compare(Build b1, Build b2) {
+        return Long.compare(
+          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
+        );
+      }
+    });
+
+    boolean isSerialLatestOnly = bcp.getBuildRunPolicy().equals(SERIAL_LATEST_ONLY);
+    if (isSerialLatestOnly) {
+      cancelNotYetStartedBuilds(job, bcp.getUid());
+    }
+    for (int i = 0; i < builds.size(); i++) {
+      Build b = builds.get(i);
+      if (isSerialLatestOnly && i < builds.size() - 1) {
+        cancelQueuedBuild(job, b);
+        updateOpenShiftBuildPhase(b, CANCELLED);
+        continue;
+      }
+      try {
+        buildAdded(b);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
   }
 }

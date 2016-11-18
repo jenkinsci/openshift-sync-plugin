@@ -244,16 +244,16 @@ public class BuildSyncRunListener extends RunListener<Run> {
     logger.info("Patching build in namespace " + cause.getNamespace() + " with name: " + cause.getName() + " phase: " + phase);
     getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
       .editMetadata()
-        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
-        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
-        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
+      .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
+      .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
+      .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
       .endMetadata()
       .editStatus()
-        .withPhase(phase)
-        .withStartTimestamp(startTime)
-        .withCompletionTimestamp(completionTime)
+      .withPhase(phase)
+      .withStartTimestamp(startTime)
+      .withCompletionTimestamp(completionTime)
       .endStatus()
-    .done();
+      .done();
   }
 
   private long getStartTime(Run run) {
