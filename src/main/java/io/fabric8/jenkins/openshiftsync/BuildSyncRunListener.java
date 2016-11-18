@@ -29,15 +29,11 @@ import hudson.model.listeners.RunListener;
 import hudson.triggers.SafeTimerTask;
 import io.fabric8.openshift.api.model.Build;
 import jenkins.util.Timer;
-import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
@@ -45,12 +41,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
-import static io.fabric8.jenkins.openshiftsync.BuildWatcher.buildAdded;
+import static io.fabric8.jenkins.openshiftsync.BuildWatcher.maybeScheduleNext;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON;
-import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
@@ -302,31 +296,5 @@ public class BuildSyncRunListener extends RunListener<Run> {
    */
   protected boolean shouldPollRun(Run run) {
     return run instanceof WorkflowRun && run.getCause(BuildCause.class) != null;
-  }
-
-  private void maybeScheduleNext(WorkflowJob job) {
-    BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
-    if (bcp == null) {
-      return;
-    }
-    List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
-      .withField("status", BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
-    Collections.sort(builds, new Comparator<Build>() {
-      @Override
-      public int compare(Build b1, Build b2) {
-        return Long.compare(
-          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
-          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
-        );
-      }
-    });
-
-    for (Build b : builds) {
-      try {
-        buildAdded(b);
-      } catch (IOException e) {
-        e.printStackTrace();
-      }
-    }
   }
 }
