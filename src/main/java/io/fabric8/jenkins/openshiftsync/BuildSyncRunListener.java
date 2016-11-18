@@ -161,6 +161,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   @Override
   public synchronized void onFinalized(Run run) {
     if (shouldPollRun(run)) {
+      runsToPoll.remove(run);
       pollRun(run);
       logger.info("onFinalized " + run.getUrl());
     }
