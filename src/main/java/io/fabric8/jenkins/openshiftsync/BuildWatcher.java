@@ -40,13 +40,12 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
-import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
-import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelQueuedBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuildConfigUid;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.handleBuildList;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
@@ -179,21 +178,8 @@ public class BuildWatcher implements Watcher<Build> {
         if (bcp == null) {
           continue;
         }
-        boolean isSerialLatestOnly = bcp.getBuildRunPolicy().equals(SERIAL_LATEST_ONLY);
         List<Build> builds = buildConfigBuilds.getValue();
-        for (int i = 0; i < builds.size(); i++) {
-          Build b = builds.get(i);
-          if (isSerialLatestOnly && i < builds.size() - 1) {
-            cancelQueuedBuild(job, b);
-            updateOpenShiftBuildPhase(b, CANCELLED);
-            continue;
-          }
-          try {
-            buildAdded(b);
-          } catch (IOException e) {
-            e.printStackTrace();
-          }
-        }
+        handleBuildList(job, builds, bcp);
       }
     }
   }

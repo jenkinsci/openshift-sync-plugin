@@ -251,9 +251,16 @@ public class JenkinsUtils {
       }
     });
 
-    boolean isSerialLatestOnly = bcp.getBuildRunPolicy().equals(SERIAL_LATEST_ONLY);
+    handleBuildList(job, builds, bcp);
+  }
+
+  public static void handleBuildList(WorkflowJob job, List<Build> builds, BuildConfigProjectProperty buildConfigProjectProperty) {
+    if (builds.isEmpty()) {
+      return;
+    }
+    boolean isSerialLatestOnly = SERIAL_LATEST_ONLY.equals(buildConfigProjectProperty.getBuildRunPolicy());
     if (isSerialLatestOnly) {
-      cancelNotYetStartedBuilds(job, bcp.getUid());
+      cancelNotYetStartedBuilds(job, buildConfigProjectProperty.getUid());
     }
     for (int i = 0; i < builds.size(); i++) {
       Build b = builds.get(i);
