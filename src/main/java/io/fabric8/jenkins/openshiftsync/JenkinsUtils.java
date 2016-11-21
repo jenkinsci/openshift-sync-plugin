@@ -32,7 +32,6 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -48,7 +47,9 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
+import static java.util.Collections.sort;
 import static java.util.logging.Level.WARNING;
 import static org.apache.commons.lang.StringUtils.isBlank;
 
@@ -87,27 +88,27 @@ public class JenkinsUtils {
     return root;
   }
 
-  public synchronized static void triggerJob(WorkflowJob job, Build build) throws IOException {
+  public synchronized static boolean triggerJob(WorkflowJob job, Build build) throws IOException {
     String buildConfigName = build.getStatus().getConfig().getName();
     if (isBlank(buildConfigName)) {
-      return;
+      return false;
     }
 
     BuildConfigProjectProperty bcProp = job.getProperty(BuildConfigProjectProperty.class);
     if (bcProp == null) {
-      return;
+      return false;
     }
 
     switch (bcProp.getBuildRunPolicy()) {
       case SERIAL_LATEST_ONLY:
         cancelQueuedBuilds(job, bcProp.getUid());
         if (job.isBuilding()) {
-          return;
+          return false;
         }
         break;
       case SERIAL:
         if (job.isInQueue() || job.isBuilding()) {
-          return;
+          return false;
         }
         break;
       default:
@@ -115,14 +116,16 @@ public class JenkinsUtils {
 
     BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
     if (buildConfig == null) {
-      return;
+      return false;
     }
 
     updateSourceCredentials(buildConfig);
 
     if (job.scheduleBuild2(0, new CauseAction(new BuildCause(build, bcProp.getUid()))) != null) {
       updateOpenShiftBuildPhase(build, PENDING);
+      return true;
     }
+    return false;
   }
 
   public synchronized static void cancelBuild(WorkflowJob job, Build build) {
@@ -244,16 +247,6 @@ public class JenkinsUtils {
     }
     List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
       .withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
-    Collections.sort(builds, new Comparator<Build>() {
-      @Override
-      public int compare(Build b1, Build b2) {
-        return Long.compare(
-          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
-          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
-        );
-      }
-    });
-
     handleBuildList(job, builds, bcp);
   }
 
@@ -263,20 +256,59 @@ public class JenkinsUtils {
     }
     boolean isSerialLatestOnly = SERIAL_LATEST_ONLY.equals(buildConfigProjectProperty.getBuildRunPolicy());
     if (isSerialLatestOnly) {
+      // Try to cancel any builds that haven't actually started, waiting for executor perhaps.
       cancelNotYetStartedBuilds(job, buildConfigProjectProperty.getUid());
     }
+    sort(builds, new Comparator<Build>() {
+      @Override
+      public int compare(Build b1, Build b2) {
+        // Order so cancellations are first in list so we can stop processing build list when build run policy is
+        // SerialLatestOnly and job is currently building.
+        Boolean b1Cancelled = b1.getStatus() != null && b1.getStatus().getCancelled() != null ?
+          b1.getStatus().getCancelled() : false;
+        Boolean b2Cancelled = b2.getStatus() != null && b2.getStatus().getCancelled() != null ?
+          b2.getStatus().getCancelled() : false;
+        // Inverse comparison as boolean comparison would put false before true. Could have inverted both cancellation
+        // states but this removes that step.
+        int cancellationCompare = b2Cancelled.compareTo(b1Cancelled);
+        if (cancellationCompare != 0) {
+          return cancellationCompare;
+        }
+
+        return Long.compare(
+          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
+        );
+      }
+    });
+    boolean isSerial = SERIAL.equals(buildConfigProjectProperty.getBuildRunPolicy());
+    boolean jobIsBuilding = job.isBuilding();
     for (int i = 0; i < builds.size(); i++) {
       Build b = builds.get(i);
-      if (isSerialLatestOnly && i < builds.size() - 1) {
-        cancelQueuedBuild(job, b);
-        updateOpenShiftBuildPhase(b, CANCELLED);
-        continue;
+      // For SerialLatestOnly we should try to cancel all builds before the latest one requested.
+      if (isSerialLatestOnly) {
+        // If the job is currently building, then let's return on the first non-cancellation request so we do not try to
+        // queue a new build.
+        if (jobIsBuilding && !isCancelled(b.getStatus())) {
+          return;
+        }
+
+        if (i < builds.size() - 1) {
+          cancelQueuedBuild(job, b);
+          updateOpenShiftBuildPhase(b, CANCELLED);
+          continue;
+        }
       }
+      boolean buildAdded = false;
       try {
-        buildAdded(b);
+        buildAdded = buildAdded(b);
       } catch (IOException e) {
         ObjectMeta meta = b.getMetadata();
         LOGGER.log(WARNING, "Failed to add new build " + meta.getNamespace() + "/" + meta.getName(), e);
+      }
+      // If it's a serial build then we only need to schedule the first build request.
+      if (isSerial && buildAdded) {
+        return;
       }
     }
   }

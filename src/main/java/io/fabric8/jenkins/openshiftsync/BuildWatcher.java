@@ -41,8 +41,6 @@ import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
-import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
-import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuildConfigUid;
@@ -197,48 +195,23 @@ public class BuildWatcher implements Watcher<Build> {
     }
   }
 
-  public static synchronized void buildAdded(Build build) throws IOException {
+  public static synchronized boolean buildAdded(Build build) throws IOException {
     BuildStatus status = build.getStatus();
     if (status != null) {
       if (isCancelled(status)) {
         updateOpenShiftBuildPhase(build, CANCELLED);
-        return;
+        return false;
       }
       if (!isNew(status)) {
-        return;
+        return false;
       }
     }
 
     WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
-      triggerJob(job, build);
+      return triggerJob(job, build);
     }
-  }
-
-  public static synchronized void maybeScheduleNext(WorkflowJob job) {
-    BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
-    if (bcp == null) {
-      return;
-    }
-    List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
-      .withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
-    Collections.sort(builds, new Comparator<Build>() {
-      @Override
-      public int compare(Build b1, Build b2) {
-        return Long.compare(
-          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
-          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
-        );
-      }
-    });
-
-    for (Build b : builds) {
-      try {
-        buildAdded(b);
-      } catch (IOException e) {
-        logger.log(WARNING, "Failed to handle new build request", e);
-      }
-    }
+    return false;
   }
 
 }
