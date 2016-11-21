@@ -33,4 +33,5 @@ public class Constants {
   public static final String OPENSHIFT_SECRETS_TYPE_SSH = "kubernetes.io/ssh-auth";
   public static final String OPENSHIFT_SECRETS_TYPE_BASICAUTH = "kubernetes.io/basic-auth";
   public static final String OPENSHIFT_SECRETS_TYPE_OPAQUE = "Opaque";
+  public static final String OPENSHIFT_BUILD_STATUS_FIELD = "status";
 }

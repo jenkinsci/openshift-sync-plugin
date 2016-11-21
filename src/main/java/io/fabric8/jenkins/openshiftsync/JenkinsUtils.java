@@ -43,6 +43,7 @@ import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.BuildWatcher.buildAdded;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -240,7 +241,7 @@ public class JenkinsUtils {
       return;
     }
     List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
-      .withField("status", BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
+      .withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
     Collections.sort(builds, new Comparator<Build>() {
       @Override
       public int compare(Build b1, Build b2) {
