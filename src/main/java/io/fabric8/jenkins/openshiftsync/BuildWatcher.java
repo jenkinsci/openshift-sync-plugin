@@ -172,6 +172,9 @@ public class BuildWatcher implements Watcher<Build> {
           continue;
         }
         WorkflowJob job = getJobFromBuildConfigUid(bc.getMetadata().getUid());
+        if (job == null) {
+          continue;
+        }
         BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
         if (bcp == null) {
           continue;
