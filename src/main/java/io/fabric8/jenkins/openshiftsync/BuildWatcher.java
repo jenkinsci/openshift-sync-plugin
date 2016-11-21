@@ -21,24 +21,30 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.Build;
+import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.BuildStatus;
 import jenkins.util.Timer;
+import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
-import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuildConfigUid;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.handleBuildList;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
@@ -67,10 +73,10 @@ public class BuildWatcher implements Watcher<Build> {
         logger.info("loading initial Build resources");
 
         try {
-          BuildList builds = getOpenShiftClient().builds().inNamespace(namespace).list();
-          onInitialBuilds(builds);
+          BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
+          onInitialBuilds(newBuilds);
           logger.info("loaded initial Build resources");
-          buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(builds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
+          buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
         }
@@ -130,12 +136,49 @@ public class BuildWatcher implements Watcher<Build> {
         }
       });
 
-      for (Build build : items) {
-        try {
-          buildAdded(build);
-        } catch (IOException e) {
-          e.printStackTrace();
+      // We need to sort the builds into their build configs so we can handle build run policies correctly.
+      Map<String, BuildConfig> buildConfigMap = new HashMap<>();
+      Map<BuildConfig, List<Build>> buildConfigBuildMap = new HashMap<>(items.size());
+      for (Build b : items) {
+        String buildConfigName = b.getStatus().getConfig().getName();
+        if (StringUtils.isEmpty(buildConfigName)) {
+          continue;
         }
+        String namespace = b.getMetadata().getNamespace();
+        String bcMapKey = namespace + "/" + buildConfigName;
+        BuildConfig bc = buildConfigMap.get(bcMapKey);
+        if (bc == null) {
+          bc = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+          if (bc == null) {
+            continue;
+          }
+          buildConfigMap.put(bcMapKey, bc);
+        }
+        List<Build> bcBuilds = buildConfigBuildMap.get(bc);
+        if (bcBuilds == null) {
+          bcBuilds = new ArrayList<>();
+          buildConfigBuildMap.put(bc, bcBuilds);
+        }
+        bcBuilds.add(b);
+      }
+
+      // Now handle the builds.
+      for (Map.Entry<BuildConfig, List<Build>> buildConfigBuilds : buildConfigBuildMap.entrySet()) {
+        BuildConfig bc = buildConfigBuilds.getKey();
+        if (bc.getMetadata() == null) {
+          // Should never happen but let's be safe...
+          continue;
+        }
+        WorkflowJob job = getJobFromBuildConfigUid(bc.getMetadata().getUid());
+        if (job == null) {
+          continue;
+        }
+        BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
+        if (bcp == null) {
+          continue;
+        }
+        List<Build> builds = buildConfigBuilds.getValue();
+        handleBuildList(job, builds, bcp);
       }
     }
   }
@@ -152,48 +195,23 @@ public class BuildWatcher implements Watcher<Build> {
     }
   }
 
-  public static synchronized void buildAdded(Build build) throws IOException {
+  public static synchronized boolean buildAdded(Build build) throws IOException {
     BuildStatus status = build.getStatus();
     if (status != null) {
       if (isCancelled(status)) {
         updateOpenShiftBuildPhase(build, CANCELLED);
-        return;
+        return false;
       }
       if (!isNew(status)) {
-        return;
+        return false;
       }
     }
 
     WorkflowJob job = getJobFromBuild(build);
     if (job != null) {
-      triggerJob(job, build);
+      return triggerJob(job, build);
     }
-  }
-
-  public static synchronized void maybeScheduleNext(WorkflowJob job) {
-    BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
-    if (bcp == null) {
-      return;
-    }
-    List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
-      .withField("status", BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
-    Collections.sort(builds, new Comparator<Build>() {
-      @Override
-      public int compare(Build b1, Build b2) {
-        return Long.compare(
-          Long.parseLong(b1.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
-          Long.parseLong(b2.getMetadata().getAnnotations().get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER))
-        );
-      }
-    });
-
-    for (Build b : builds) {
-      try {
-        buildAdded(b);
-      } catch (IOException e) {
-        logger.log(WARNING, "Failed to handle new build request", e);
-      }
-    }
+    return false;
   }
 
 }

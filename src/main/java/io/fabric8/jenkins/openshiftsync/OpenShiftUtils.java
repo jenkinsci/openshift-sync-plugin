@@ -334,7 +334,7 @@ public class OpenShiftUtils {
   }
 
   public static boolean isCancelled(BuildStatus status) {
-    return Boolean.TRUE.equals(status.getCancelled());
+    return status != null && status.getCancelled() != null && Boolean.TRUE.equals(status.getCancelled());
   }
 
   abstract class StatelessReplicationControllerMixIn extends ReplicationController {
