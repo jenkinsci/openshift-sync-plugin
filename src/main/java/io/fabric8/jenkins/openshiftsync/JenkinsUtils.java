@@ -21,6 +21,7 @@ import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
@@ -48,6 +49,7 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
+import static java.util.logging.Level.WARNING;
 import static org.apache.commons.lang.StringUtils.isBlank;
 
 /**
@@ -273,7 +275,8 @@ public class JenkinsUtils {
       try {
         buildAdded(b);
       } catch (IOException e) {
-        e.printStackTrace();
+        ObjectMeta meta = b.getMetadata();
+        LOGGER.log(WARNING, "Failed to add new build " + meta.getNamespace() + "/" + meta.getName(), e);
       }
     }
   }
