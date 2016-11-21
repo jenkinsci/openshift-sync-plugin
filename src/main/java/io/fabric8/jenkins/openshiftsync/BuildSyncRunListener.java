@@ -40,7 +40,6 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI;
@@ -49,6 +48,8 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_J
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 
 /**
@@ -236,7 +237,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
     try {
       json = new ObjectMapper().writeValueAsString(wfRunExt);
     } catch (JsonProcessingException e) {
-      logger.log(Level.SEVERE, "Failed to serialize workflow run. " + e, e);
+      logger.log(SEVERE, "Failed to serialize workflow run. " + e, e);
       return;
     }
 
@@ -254,7 +255,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       }
     }
 
-    logger.info("Patching build in namespace " + cause.getNamespace() + " with name: " + cause.getName() + " phase: " + phase);
+    logger.log(FINE, "Patching build {0}/{1}: setting phase to {2}", new Object[]{cause.getNamespace(), cause.getName(), phase});
     getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
       .editMetadata()
       .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
