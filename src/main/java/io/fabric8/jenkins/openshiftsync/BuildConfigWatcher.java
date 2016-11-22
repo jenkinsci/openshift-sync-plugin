@@ -109,7 +109,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   }
 
   @Override
-  public void onClose(KubernetesClientException e) {
+  public synchronized void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
 
@@ -120,7 +120,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  private void onInitialBuildConfigs(BuildConfigList buildConfigs) {
+  private synchronized void onInitialBuildConfigs(BuildConfigList buildConfigs) {
     List<BuildConfig> items = buildConfigs.getItems();
     if (items != null) {
       for (BuildConfig buildConfig : items) {
@@ -135,7 +135,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
   @Override
-  public void eventReceived(Watcher.Action action, BuildConfig buildConfig) {
+  public synchronized void eventReceived(Watcher.Action action, BuildConfig buildConfig) {
     try {
       switch (action) {
         case ADDED:

@@ -95,7 +95,7 @@ public class BuildWatcher implements Watcher<Build> {
   }
 
   @Override
-  public void onClose(KubernetesClientException e) {
+  public synchronized void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
 
@@ -108,7 +108,7 @@ public class BuildWatcher implements Watcher<Build> {
 
   @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
   @Override
-  public void eventReceived(Action action, Build build) {
+  public synchronized void eventReceived(Action action, Build build) {
     try {
       switch (action) {
         case ADDED:
