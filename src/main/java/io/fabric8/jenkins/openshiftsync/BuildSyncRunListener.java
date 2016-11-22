@@ -48,6 +48,7 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_J
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
@@ -256,18 +257,26 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
 
     logger.log(FINE, "Patching build {0}/{1}: setting phase to {2}", new Object[]{cause.getNamespace(), cause.getName(), phase});
-    getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
-      .editMetadata()
-      .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
-      .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
-      .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
-      .endMetadata()
-      .editStatus()
-      .withPhase(phase)
-      .withStartTimestamp(startTime)
-      .withCompletionTimestamp(completionTime)
-      .endStatus()
-      .done();
+    try {
+      getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
+        .editMetadata()
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
+        .endMetadata()
+        .editStatus()
+        .withPhase(phase)
+        .withStartTimestamp(startTime)
+        .withCompletionTimestamp(completionTime)
+        .endStatus()
+        .done();
+    } catch (KubernetesClientException e) {
+      if (HTTP_NOT_FOUND == e.getCode()) {
+        runsToPoll.remove(run);
+      } else {
+        throw e;
+      }
+    }
   }
 
   private long getStartTime(Run run) {
