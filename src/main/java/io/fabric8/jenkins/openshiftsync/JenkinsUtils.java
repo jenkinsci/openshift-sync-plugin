@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
@@ -233,11 +234,7 @@ public class JenkinsUtils {
     if (buildConfig == null) {
       return null;
     }
-    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-  }
-
-  public static WorkflowJob getJobFromBuildConfigUid(String bcUid) {
-    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(bcUid);
+    return getJobFromBuildConfig(buildConfig);
   }
 
   public static void maybeScheduleNext(WorkflowJob job) {

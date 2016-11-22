@@ -39,11 +39,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
-import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuildConfigUid;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.handleBuildList;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -169,7 +170,7 @@ public class BuildWatcher implements Watcher<Build> {
           // Should never happen but let's be safe...
           continue;
         }
-        WorkflowJob job = getJobFromBuildConfigUid(bc.getMetadata().getUid());
+        WorkflowJob job = getJobFromBuildConfig(bc);
         if (job == null) {
           continue;
         }
