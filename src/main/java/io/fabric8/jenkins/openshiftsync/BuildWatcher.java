@@ -74,9 +74,9 @@ public class BuildWatcher implements Watcher<Build> {
         logger.info("loading initial Build resources");
 
         try {
-          BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
-          onInitialBuilds(newBuilds);
+          BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).list();
           logger.info("loaded initial Build resources");
+          onInitialBuilds(newBuilds);
           buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
@@ -84,7 +84,7 @@ public class BuildWatcher implements Watcher<Build> {
       }
     };
     // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
+    Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
   }
 
   public void stop() {

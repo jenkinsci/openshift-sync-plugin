@@ -73,6 +73,8 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   public void start(final Callable<Void> completionCallback) {
     initializeBuildConfigToJobMap();
 
+    final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
+
     // lets process the initial state
     logger.info("Now handling startup build configs!!");
     // lets do this in a background thread to avoid errors like:
@@ -85,6 +87,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         try {
           onInitialBuildConfigs(buildConfigs);
           logger.info("loaded initial BuildConfigs resources");
+          buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this);
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
         }
@@ -95,7 +98,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       }
     };
     // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 1, TimeUnit.SECONDS);
+    Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
   }
 
   public void stop() {
