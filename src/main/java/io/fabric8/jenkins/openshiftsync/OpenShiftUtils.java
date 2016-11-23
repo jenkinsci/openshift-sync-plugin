@@ -55,7 +55,7 @@ import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_DEFAULT_NAMESPACE;
-import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.FINE;
 
 /**
  */
@@ -267,7 +267,7 @@ public class OpenShiftUtils {
   }
 
   public static void updateOpenShiftBuildPhase(Build build, String phase) {
-    logger.log(INFO, "setting build to {} in namespace {}/{}", new Object[]{phase, build.getMetadata().getNamespace(), build.getMetadata().getName()});
+    logger.log(FINE, "setting build to {0} in namespace {1}/{2}", new Object[]{phase, build.getMetadata().getNamespace(), build.getMetadata().getName()});
     getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
       .edit()
       .editStatus().withPhase(phase).endStatus()

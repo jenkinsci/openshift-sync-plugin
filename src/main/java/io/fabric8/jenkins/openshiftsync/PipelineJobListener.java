@@ -18,6 +18,7 @@ package io.fabric8.jenkins.openshiftsync;
 import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.listeners.ItemListener;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.openshift.api.model.BuildConfig;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -26,8 +27,11 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.removeJobWithBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.updateBuildConfigFromJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static org.apache.commons.lang.StringUtils.isNotBlank;
 
 /**
  * Listens to {@link WorkflowJob} objects being updated via the web console or Jenkins REST API and replicating
@@ -74,18 +78,27 @@ public class PipelineJobListener extends ItemListener {
     if (item instanceof WorkflowJob) {
       WorkflowJob job = (WorkflowJob) item;
       if (job.getProperty(BuildConfigProjectProperty.class) != null
-        && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getNamespace())
-        && StringUtils.isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getName())) {
+        && isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getNamespace())
+        && isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getName())) {
 
         NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), namespace);
         logger.info("Deleting BuildConfig " + buildName);
 
         String namespace = buildName.getNamespace();
         String buildConfigName = buildName.getName();
-        try {
-          getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).delete();
-        } catch (Exception e) {
-          logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace + " for name: " + buildConfigName);
+        BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+        if (buildConfig != null) {
+          try {
+            getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).delete();
+          } catch (KubernetesClientException e) {
+            if (HTTP_NOT_FOUND != e.getCode()) {
+              logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace + " for name: " + buildConfigName, e);
+            }
+          } catch (Exception e) {
+            logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace + " for name: " + buildConfigName, e);
+          } finally {
+            removeJobWithBuildConfig(buildConfig);
+          }
         }
       }
     }

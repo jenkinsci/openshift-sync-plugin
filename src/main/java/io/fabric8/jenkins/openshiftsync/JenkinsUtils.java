@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
@@ -88,7 +89,7 @@ public class JenkinsUtils {
     return root;
   }
 
-  public synchronized static boolean triggerJob(WorkflowJob job, Build build) throws IOException {
+  public static boolean triggerJob(WorkflowJob job, Build build) throws IOException {
     String buildConfigName = build.getStatus().getConfig().getName();
     if (isBlank(buildConfigName)) {
       return false;
@@ -114,7 +115,9 @@ public class JenkinsUtils {
       default:
     }
 
-    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    ObjectMeta meta = build.getMetadata();
+    String namespace = meta.getNamespace();
+    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
     if (buildConfig == null) {
       return false;
     }
@@ -123,6 +126,13 @@ public class JenkinsUtils {
 
     if (job.scheduleBuild2(0, new CauseAction(new BuildCause(build, bcProp.getUid()))) != null) {
       updateOpenShiftBuildPhase(build, PENDING);
+      // If builds are queued too quickly, Jenkins can add the cause to the previous queued build so let's add a tiny
+      // sleep.
+      try {
+        Thread.sleep(50l);
+      } catch (InterruptedException e) {
+        // Ignore
+      }
       return true;
     }
     return false;
@@ -233,11 +243,7 @@ public class JenkinsUtils {
     if (buildConfig == null) {
       return null;
     }
-    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-  }
-
-  public static WorkflowJob getJobFromBuildConfigUid(String bcUid) {
-    return BuildTrigger.DESCRIPTOR.getJobFromBuildConfigUid(bcUid);
+    return getJobFromBuildConfig(buildConfig);
   }
 
   public static void maybeScheduleNext(WorkflowJob job) {

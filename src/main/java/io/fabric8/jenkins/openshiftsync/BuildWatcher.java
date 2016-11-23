@@ -39,11 +39,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
-import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuildConfigUid;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.handleBuildList;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -73,9 +74,9 @@ public class BuildWatcher implements Watcher<Build> {
         logger.info("loading initial Build resources");
 
         try {
-          BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField("status", BuildPhases.NEW).list();
-          onInitialBuilds(newBuilds);
+          BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).list();
           logger.info("loaded initial Build resources");
+          onInitialBuilds(newBuilds);
           buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
@@ -83,7 +84,7 @@ public class BuildWatcher implements Watcher<Build> {
       }
     };
     // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
+    Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
   }
 
   public void stop() {
@@ -94,7 +95,7 @@ public class BuildWatcher implements Watcher<Build> {
   }
 
   @Override
-  public void onClose(KubernetesClientException e) {
+  public synchronized void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
 
@@ -107,7 +108,7 @@ public class BuildWatcher implements Watcher<Build> {
 
   @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
   @Override
-  public void eventReceived(Action action, Build build) {
+  public synchronized void eventReceived(Action action, Build build) {
     try {
       switch (action) {
         case ADDED:
@@ -169,7 +170,7 @@ public class BuildWatcher implements Watcher<Build> {
           // Should never happen but let's be safe...
           continue;
         }
-        WorkflowJob job = getJobFromBuildConfigUid(bc.getMetadata().getUid());
+        WorkflowJob job = getJobFromBuildConfig(bc);
         if (job == null) {
           continue;
         }
