@@ -26,7 +26,6 @@ import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
-import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -60,6 +59,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   public GlobalPluginConfiguration() {
     load();
     configChange();
+    save();
   }
 
   public static GlobalPluginConfiguration get() {
@@ -74,8 +74,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   @Override
   public boolean configure(StaplerRequest req, JSONObject json) throws hudson.model.Descriptor.FormException {
     req.bindJSON(this, json);
-    save();
     configChange();
+    save();
     return true;
   }
 
@@ -144,15 +144,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
           }
 
           buildConfigWatcher = new BuildConfigWatcher(namespace);
-          buildConfigWatcher.start(new Callable<Void>() {
-            @Override
-            public Void call() throws Exception {
-              buildWatcher = new BuildWatcher(namespace);
-              buildWatcher.start();
-
-              return null;
-            }
-          });
+          buildConfigWatcher.start();
+          buildWatcher = new BuildWatcher(namespace);
+          buildWatcher.start();
         }
       };
       // lets give jenkins a while to get started ;)
