@@ -15,17 +15,21 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TopLevelItem;
+import hudson.security.ACL;
+import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
+import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -192,23 +196,41 @@ public class JenkinsUtils {
   }
 
   private static void terminateRun(final WorkflowRun run) {
-    run.doTerm();
-    Timer.get().schedule(new Runnable() {
+    ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, RuntimeException>() {
       @Override
-      public void run() {
-        run.doKill();
+      public Void call() throws RuntimeException {
+        run.doTerm();
+        Timer.get().schedule(new SafeTimerTask() {
+          @Override
+          public void doRun() {
+            ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, RuntimeException>() {
+              @Override
+              public Void call() throws RuntimeException {
+                run.doKill();
+                return null;
+              }
+            });
+          }
+        }, 5, TimeUnit.SECONDS);
+        return null;
       }
-    }, 5, TimeUnit.SECONDS);
+    });
   }
 
+  @SuppressFBWarnings("SE_BAD_FIELD")
   public static boolean cancelQueuedBuild(WorkflowJob job, Build build) {
     String buildUid = build.getMetadata().getUid();
-    Queue buildQueue = Jenkins.getActiveInstance().getQueue();
-    for (Queue.Item item : buildQueue.getItems()) {
+    final Queue buildQueue = Jenkins.getActiveInstance().getQueue();
+    for (final Queue.Item item : buildQueue.getItems()) {
       for (Cause cause : item.getCauses()) {
         if (cause instanceof BuildCause && ((BuildCause) cause).getUid().equals(buildUid)) {
-          buildQueue.cancel(item);
-          return true;
+          return ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Boolean, RuntimeException>() {
+            @Override
+            public Boolean call() throws RuntimeException {
+              buildQueue.cancel(item);
+              return true;
+            }
+          });
         }
       }
     }
