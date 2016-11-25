@@ -20,7 +20,6 @@ import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Job;
 import hudson.model.Queue;
-import hudson.model.Run;
 import hudson.model.TopLevelItem;
 import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
@@ -72,18 +71,6 @@ public class JenkinsUtils {
     return null;
   }
 
-  public static Run getRun(String jobName, String buildName) {
-    Job job = getJob(jobName);
-    if (job != null) {
-      return job.getBuild(buildName);
-    }
-    return null;
-  }
-
-  public static Run getRun(BuildName buildName) {
-    return getRun(buildName.getJobName(), buildName.getBuildName());
-  }
-
   public static String getRootUrl() {
     // TODO is there a better place to find this?
     String root = Jenkins.getActiveInstance().getRootUrl();
@@ -94,6 +81,10 @@ public class JenkinsUtils {
   }
 
   public static boolean triggerJob(WorkflowJob job, Build build) throws IOException {
+    if (isAlreadyTriggered(job, build)) {
+      return false;
+    }
+
     String buildConfigName = build.getStatus().getConfig().getName();
     if (isBlank(buildConfigName)) {
       return false;
@@ -142,6 +133,10 @@ public class JenkinsUtils {
     return false;
   }
 
+  private static boolean isAlreadyTriggered(WorkflowJob job, Build build) {
+    return getRun(job, build) != null;
+  }
+
   public synchronized static void cancelBuild(WorkflowJob job, Build build) {
     if (!cancelQueuedBuild(job, build)) {
       cancelRunningBuild(job, build);
@@ -151,6 +146,13 @@ public class JenkinsUtils {
     } catch (Exception e) {
       throw e;
     }
+  }
+
+  private static WorkflowRun getRun(WorkflowJob job, Build build) {
+    if (build != null && build.getMetadata() != null) {
+      return getRun(job, build.getMetadata().getUid());
+    }
+    return null;
   }
 
   private static WorkflowRun getRun(WorkflowJob job, String buildUid) {
