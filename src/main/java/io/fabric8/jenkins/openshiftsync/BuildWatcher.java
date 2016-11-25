@@ -35,6 +35,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -60,6 +61,7 @@ public class BuildWatcher implements Watcher<Build> {
 
   private final String namespace;
   private Watch buildsWatch;
+  private ScheduledFuture relister;
 
   public BuildWatcher(String namespace) {
     this.namespace = namespace;
@@ -71,23 +73,27 @@ public class BuildWatcher implements Watcher<Build> {
     Runnable task = new SafeTimerTask() {
       @Override
       public void doRun() {
-        logger.info("loading initial Build resources");
-
         try {
+          logger.fine("listing Build resources");
           BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).list();
-          logger.info("loaded initial Build resources");
           onInitialBuilds(newBuilds);
-          buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
+          logger.fine("handled Build resources");
+          if (buildsWatch == null) {
+            buildsWatch = getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this);
+          }
         } catch (Exception e) {
           logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
         }
       }
     };
-    // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
+    relister = Timer.get().scheduleAtFixedRate(task, 100, 10 * 1000, TimeUnit.MILLISECONDS);
   }
 
   public void stop() {
+    if (relister != null && !relister.isDone()) {
+      relister.cancel(true);
+      relister = null;
+    }
     if (buildsWatch != null) {
       buildsWatch.close();
       buildsWatch = null;

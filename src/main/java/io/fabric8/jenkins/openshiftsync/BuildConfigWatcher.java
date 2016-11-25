@@ -37,7 +37,7 @@ import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import java.io.InputStream;
 import java.util.List;
-import java.util.concurrent.Callable;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -56,6 +56,7 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobDisplayN
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobName;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
 import static java.net.HttpURLConnection.HTTP_GONE;
+import static java.util.logging.Level.SEVERE;
 
 /**
  * Watches {@link BuildConfig} objects in OpenShift and for WorkflowJobs we ensure there is a
@@ -65,15 +66,14 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private final Logger logger = Logger.getLogger(getClass().getName());
   private final String namespace;
   private Watch buildConfigWatch;
+  private ScheduledFuture relister;
 
   public BuildConfigWatcher(String namespace) {
     this.namespace = namespace;
   }
 
-  public void start(final Callable<Void> completionCallback) {
+  public void start() {
     initializeBuildConfigToJobMap();
-
-    final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
 
     // lets process the initial state
     logger.info("Now handling startup build configs!!");
@@ -82,26 +82,27 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     Runnable task = new SafeTimerTask() {
       @Override
       public void doRun() {
-        logger.info("loading initial BuildConfigs resources");
-
         try {
+          logger.fine("listing BuildConfigs resources");
+          final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
           onInitialBuildConfigs(buildConfigs);
-          logger.info("loaded initial BuildConfigs resources");
-          buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this);
+          logger.fine("handled BuildConfigs resources");
+          if (buildConfigWatch == null) {
+            buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this);
+          }
         } catch (Exception e) {
-          logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
-        }
-
-        if (completionCallback != null) {
-          Timer.get().schedule(completionCallback, 100, TimeUnit.MILLISECONDS);
+          logger.log(SEVERE, "Failed to load BuildConfigs: " + e, e);
         }
       }
     };
-    // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 100, TimeUnit.MILLISECONDS);
+    relister = Timer.get().scheduleAtFixedRate(task, 100, 10 * 1000, TimeUnit.MILLISECONDS);
   }
 
   public void stop() {
+    if (relister != null && !relister.isDone()) {
+      relister.cancel(true);
+      relister = null;
+    }
     if (buildConfigWatch != null) {
       buildConfigWatch.close();
       buildConfigWatch = null;
@@ -115,7 +116,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
       if (e.getStatus() != null && e.getStatus().getCode() == HTTP_GONE) {
         stop();
-        start(null);
+        start();
       }
     }
   }
@@ -127,7 +128,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         try {
           upsertJob(buildConfig);
         } catch (Exception e) {
-          e.printStackTrace();
+          logger.log(SEVERE, "Failed to update job", e);
         }
       }
     }
