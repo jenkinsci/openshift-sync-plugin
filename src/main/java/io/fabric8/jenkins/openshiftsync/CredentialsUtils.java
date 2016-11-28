@@ -47,7 +47,7 @@ public class CredentialsUtils {
       Secret sourceSecret = getOpenShiftClient().secrets().inNamespace(buildConfig.getMetadata().getNamespace()).withName(buildConfig.getSpec().getSource().getSourceSecret().getName()).get();
       if (sourceSecret != null) {
         Credentials creds = secretToCredentials(sourceSecret);
-        id = buildConfig.getMetadata().getNamespace() + "-" + buildConfig.getSpec().getSource().getSourceSecret().getName();
+        id = secretName(buildConfig.getMetadata().getNamespace(), buildConfig.getSpec().getSource().getSourceSecret().getName());
         Credentials existingCreds = lookupCredentials(id);
         final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
         try {
@@ -77,17 +77,22 @@ public class CredentialsUtils {
     );
   }
 
+  private static String secretName(String namespace, String name) {
+    return namespace + "-" + name;
+  }
+
   private static Credentials secretToCredentials(Secret secret) {
     String namespace = secret.getMetadata().getNamespace();
     String name = secret.getMetadata().getName();
     final Map<String, String> data = secret.getData();
+    final String secretName = secretName(namespace, name);
     switch (secret.getType()) {
       case OPENSHIFT_SECRETS_TYPE_OPAQUE:
         String usernameData = data.get(OPENSHIFT_SECRETS_DATA_USERNAME);
         String passwordData = data.get(OPENSHIFT_SECRETS_DATA_PASSWORD);
         if (isNotBlank(usernameData) && isNotBlank(passwordData)) {
           return newUsernamePasswordCredentials(
-            namespace + "-" + name,
+            secretName,
             usernameData,
             passwordData
           );
@@ -96,7 +101,7 @@ public class CredentialsUtils {
         String sshKeyData = data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY);
         if (isNotBlank(sshKeyData)) {
           return newSSHUserCredential(
-            namespace + "-" + name,
+            secretName,
             data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
             sshKeyData
           );
@@ -110,13 +115,13 @@ public class CredentialsUtils {
         return null;
       case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
         return newUsernamePasswordCredentials(
-          name + "-" + namespace,
+          secretName,
           data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
           data.get(OPENSHIFT_SECRETS_DATA_PASSWORD)
         );
       case OPENSHIFT_SECRETS_TYPE_SSH:
         return newSSHUserCredential(
-          name + "-" + namespace,
+          secretName,
           data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
           data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY));
       default:
