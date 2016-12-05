@@ -26,6 +26,8 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.util.List;
 
+import static io.fabric8.jenkins.openshiftsync.BuildSyncRunListener.joinPaths;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getJenkinsURL;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 @Extension
@@ -39,11 +41,16 @@ public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
       if (buildConfigProjectProperty != null
         && StringUtils.isNotBlank(buildConfigProjectProperty.getNamespace())
         && StringUtils.isNotBlank(buildConfigProjectProperty.getName())) {
+
+        String namespace = buildConfigProjectProperty.getNamespace();
+        String jobURL = joinPaths(getJenkinsURL(getOpenShiftClient(), namespace), wj.getUrl());
+
         getOpenShiftClient().buildConfigs()
-          .inNamespace(buildConfigProjectProperty.getNamespace()).withName(buildConfigProjectProperty.getName())
+          .inNamespace(namespace).withName(buildConfigProjectProperty.getName())
           .instantiate(
             new BuildRequestBuilder()
-              .withNewMetadata().withName(buildConfigProjectProperty.getName()).endMetadata()
+              .withNewMetadata().withName(buildConfigProjectProperty.getName()).and()
+              .addNewTriggeredBy().withMessage("Triggered by Jenkins job at " + jobURL).and()
               .build()
           );
         return false;
