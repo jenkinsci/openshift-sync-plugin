@@ -20,16 +20,18 @@ public class BuildConfigToJobMap {
   }
 
   static synchronized void initializeBuildConfigToJobMap() {
-    List<WorkflowJob> jobs = Jenkins.getActiveInstance().getAllItems(WorkflowJob.class);
-    buildConfigToJobMap = new ConcurrentHashMap<>(jobs.size());
-    for (WorkflowJob job : jobs) {
-      BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
-      if (buildConfigProjectProperty == null) {
-        continue;
-      }
-      String bcUid = buildConfigProjectProperty.getUid();
-      if (isNotBlank(bcUid)) {
-        buildConfigToJobMap.put(bcUid, job);
+    if (buildConfigToJobMap == null) {
+      List<WorkflowJob> jobs = Jenkins.getActiveInstance().getAllItems(WorkflowJob.class);
+      buildConfigToJobMap = new ConcurrentHashMap<>(jobs.size());
+      for (WorkflowJob job : jobs) {
+        BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
+        if (buildConfigProjectProperty == null) {
+          continue;
+        }
+        String bcUid = buildConfigProjectProperty.getUid();
+        if (isNotBlank(bcUid)) {
+          buildConfigToJobMap.put(bcUid, job);
+        }
       }
     }
   }

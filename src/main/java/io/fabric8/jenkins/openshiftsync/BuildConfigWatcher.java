@@ -72,7 +72,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     this.namespace = namespace;
   }
 
-  public void start() {
+  public synchronized void start() {
     initializeBuildConfigToJobMap();
 
     // lets process the initial state
@@ -98,7 +98,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     relister = Timer.get().scheduleAtFixedRate(task, 100, 10 * 1000, TimeUnit.MILLISECONDS);
   }
 
-  public void stop() {
+  public synchronized void stop() {
     if (relister != null && !relister.isDone()) {
       relister.cancel(true);
       relister = null;
