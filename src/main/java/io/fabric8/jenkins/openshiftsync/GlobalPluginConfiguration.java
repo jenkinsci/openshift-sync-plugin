@@ -16,10 +16,19 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import hudson.Extension;
+import hudson.model.Computer;
+import hudson.triggers.SafeTimerTask;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import jenkins.model.GlobalConfiguration;
+import jenkins.model.Jenkins;
+import jenkins.util.Timer;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
+
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespaceOrUseDefault;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
@@ -27,15 +36,15 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
 @Extension
 public class GlobalPluginConfiguration extends GlobalConfiguration {
 
+  private static final Logger logger = Logger.getLogger(GlobalPluginConfiguration.class.getName());
+
   private boolean enabled = true;
 
   private String server;
 
   private String namespace;
 
-  private transient NewBuildWatcher newBuildWatcher;
-
-  private transient CancelledBuildWatcher cancelledBuildWatcher;
+  private transient BuildWatcher buildWatcher;
 
   private transient BuildConfigWatcher buildConfigWatcher;
 
@@ -50,6 +59,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   public GlobalPluginConfiguration() {
     load();
     configChange();
+    save();
   }
 
   public static GlobalPluginConfiguration get() {
@@ -64,8 +74,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   @Override
   public boolean configure(StaplerRequest req, JSONObject json) throws hudson.model.Descriptor.FormException {
     req.bindJSON(this, json);
-    save();
     configChange();
+    save();
     return true;
   }
 
@@ -98,25 +108,55 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       if (buildConfigWatcher != null) {
         buildConfigWatcher.stop();
       }
-      if (newBuildWatcher != null) {
-        newBuildWatcher.stop();
-      }
-      if (cancelledBuildWatcher != null) {
-        cancelledBuildWatcher.stop();
+      if (buildWatcher != null) {
+        buildWatcher.stop();
       }
       OpenShiftUtils.shutdownOpenShiftClient();
       return;
     }
-    if (enabled) {
+    try {
       OpenShiftUtils.initializeOpenShiftClient(server);
       this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
 
-      newBuildWatcher = new NewBuildWatcher(namespace);
-      newBuildWatcher.start();
-      cancelledBuildWatcher = new CancelledBuildWatcher(namespace);
-      cancelledBuildWatcher.start();
-      buildConfigWatcher = new BuildConfigWatcher(namespace);
-      buildConfigWatcher.start();
+      Runnable task = new SafeTimerTask() {
+        @Override
+        protected void doRun() throws Exception {
+          logger.info("Waiting for Jenkins to be started");
+          while (true) {
+            Computer[] computers = Jenkins.getActiveInstance().getComputers();
+            boolean ready = false;
+            for (Computer c : computers) {
+              // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
+              // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
+              if (c.isAcceptingTasks()) {
+                ready = true;
+                break;
+              }
+            }
+            if (ready) {
+              break;
+            }
+            try {
+              Thread.sleep(500);
+            } catch (InterruptedException e) {
+              // ignore
+            }
+          }
+
+          buildConfigWatcher = new BuildConfigWatcher(namespace);
+          buildConfigWatcher.start();
+          buildWatcher = new BuildWatcher(namespace);
+          buildWatcher.start();
+        }
+      };
+      // lets give jenkins a while to get started ;)
+      Timer.get().schedule(task, 1,TimeUnit.SECONDS);
+    } catch (KubernetesClientException e) {
+      if (e.getCause() != null) {
+        logger.log(Level.SEVERE, "Failed to configure OpenShift Jenkins Sync Plugin: " +  e.getCause());
+      } else {
+        logger.log(Level.SEVERE, "Failed to configure OpenShift Jenkins Sync Plugin: " +  e);
+      }
     }
   }
 

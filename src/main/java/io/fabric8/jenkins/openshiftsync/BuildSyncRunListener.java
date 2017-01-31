@@ -26,8 +26,11 @@ import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.listeners.RunListener;
+import hudson.triggers.SafeTimerTask;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.openshift.api.model.Build;
 import jenkins.util.Timer;
+import org.apache.commons.httpclient.HttpStatus;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.kohsuke.stapler.DataBoundConstructor;
 
@@ -37,14 +40,18 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_BUILD_URI;
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_LOG_URL;
-import static io.fabric8.jenkins.openshiftsync.Constants.ANNOTATION_JENKINS_STATUS_JSON;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.formatTimestamp;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.WARNING;
 
 /**
  * Listens to Jenkins Job build {@link Run} start and stop then ensure there's a suitable {@link Build} object in
@@ -52,11 +59,10 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
  */
 @Extension
 public class BuildSyncRunListener extends RunListener<Run> {
-
   private static final Logger logger = Logger.getLogger(BuildSyncRunListener.class.getName());
 
   private long pollPeriodMs = 1000;
-  private String defaultNamespace;
+  private String namespace;
 
   private transient Set<Run> runsToPoll = new CopyOnWriteArraySet<>();
 
@@ -98,7 +104,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   }
 
   private void init() {
-    defaultNamespace = OpenShiftUtils.getNamespaceOrUseDefault(defaultNamespace, getOpenShiftClient());
+    namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace, getOpenShiftClient());
   }
 
   @Override
@@ -111,7 +117,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
           run.setDescription(cause.getShortDescription());
         }
       } catch (IOException e) {
-        logger.log(Level.WARNING, "Cannot set build description: " + e);
+        logger.log(WARNING, "Cannot set build description: " + e);
       }
       if (runsToPoll.add(run)) {
         logger.info("starting polling build " + run.getUrl());
@@ -125,9 +131,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   protected void checkTimerStarted() {
     if (timerStarted.compareAndSet(false, true)) {
-      Runnable task = new Runnable() {
+      Runnable task = new SafeTimerTask() {
         @Override
-        public void run() {
+        protected void doRun() throws Exception {
           pollLoop();
         }
       };
@@ -137,26 +143,33 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   @Override
   public synchronized void onCompleted(Run run, @Nonnull TaskListener listener) {
-    runsToPoll.remove(run);
-    pollRun(run);
-    logger.info("onCompleted " + run.getUrl());
+    if (shouldPollRun(run)) {
+      runsToPoll.remove(run);
+      pollRun(run);
+      logger.info("onCompleted " + run.getUrl());
+      maybeScheduleNext(((WorkflowRun) run).getParent());
+    }
     super.onCompleted(run, listener);
   }
 
   @Override
   public synchronized void onDeleted(Run run) {
-    runsToPoll.remove(run);
-    pollRun(run);
-    logger.info("onDeleted " + run.getUrl());
+    if (shouldPollRun(run)) {
+      runsToPoll.remove(run);
+      pollRun(run);
+      logger.info("onDeleted " + run.getUrl());
+      maybeScheduleNext(((WorkflowRun) run).getParent());
+    }
     super.onDeleted(run);
-
-    // TODO should we remove the OpenShift Build too?
   }
 
   @Override
   public synchronized void onFinalized(Run run) {
-    pollRun(run);
-    logger.info("onFinalized " + run.getUrl());
+    if (shouldPollRun(run)) {
+      runsToPoll.remove(run);
+      pollRun(run);
+      logger.info("onFinalized " + run.getUrl());
+    }
     super.onFinalized(run);
   }
 
@@ -166,14 +179,23 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
   }
 
-  protected void pollRun(Run run) {
+  protected synchronized void pollRun(Run run) {
     if (!(run instanceof WorkflowRun)) {
       throw new IllegalStateException("Cannot poll a non-workflow run");
     }
 
     RunExt wfRunExt = RunExt.create((WorkflowRun) run);
 
-    upsertBuild(run, wfRunExt);
+    try {
+      upsertBuild(run, wfRunExt);
+    } catch (KubernetesClientException e) {
+      if (e.getCode() == HttpStatus.SC_UNPROCESSABLE_ENTITY) {
+        runsToPoll.remove(run);
+        logger.log(WARNING, "Cannot update status: {0}", e.getMessage());
+        return;
+      }
+      throw e;
+    }
   }
 
   private void upsertBuild(Run run, RunExt wfRunExt) {
@@ -186,7 +208,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       return;
     }
 
-    String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), defaultNamespace);
+    String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), namespace);
     String buildUrl = joinPaths(rootUrl, run.getUrl());
     String logsUrl = joinPaths(buildUrl, "/consoleText");
 
@@ -216,7 +238,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
     try {
       json = new ObjectMapper().writeValueAsString(wfRunExt);
     } catch (JsonProcessingException e) {
-      logger.log(Level.SEVERE, "Failed to serialize workflow run. " + e, e);
+      logger.log(SEVERE, "Failed to serialize workflow run. " + e, e);
       return;
     }
 
@@ -234,19 +256,27 @@ public class BuildSyncRunListener extends RunListener<Run> {
       }
     }
 
-    logger.info("Patching build in namespace " + cause.getNamespace() + " with name: " + cause.getName() + " phase: " + phase);
-    getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
-      .editMetadata()
-        .addToAnnotations(ANNOTATION_JENKINS_STATUS_JSON, json)
-        .addToAnnotations(ANNOTATION_JENKINS_BUILD_URI, buildUrl)
-        .addToAnnotations(ANNOTATION_JENKINS_LOG_URL, logsUrl)
-      .endMetadata()
-      .editStatus()
+    logger.log(FINE, "Patching build {0}/{1}: setting phase to {2}", new Object[]{cause.getNamespace(), cause.getName(), phase});
+    try {
+      getOpenShiftClient().builds().inNamespace(cause.getNamespace()).withName(cause.getName()).edit()
+        .editMetadata()
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
+        .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
+        .endMetadata()
+        .editStatus()
         .withPhase(phase)
         .withStartTimestamp(startTime)
         .withCompletionTimestamp(completionTime)
-      .endStatus()
-    .done();
+        .endStatus()
+        .done();
+    } catch (KubernetesClientException e) {
+      if (HTTP_NOT_FOUND == e.getCode()) {
+        runsToPoll.remove(run);
+      } else {
+        throw e;
+      }
+    }
   }
 
   private long getStartTime(Run run) {

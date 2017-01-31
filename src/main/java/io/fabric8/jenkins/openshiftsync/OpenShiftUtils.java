@@ -30,6 +30,7 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
+import io.fabric8.openshift.api.model.BuildStatus;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteList;
@@ -50,7 +51,11 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
+import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_DEFAULT_NAMESPACE;
+import static java.util.logging.Level.FINE;
 
 /**
  */
@@ -113,32 +118,49 @@ public class OpenShiftUtils {
   }
 
   /**
-   * Finds the Jenkins job for the given {@link BuildConfig} and defaultNamespace
+   * Finds the Jenkins job name for the given {@link BuildConfig}.
    *
    * @param bc the BuildConfig
-   * @param defaultNamespace the default namespace which does not prefix job names with "$namespace-buildConfigName"
-   * @return the jenkins job name for the given BuildConfig and default namespace
+   * @return the jenkins job name for the given BuildConfig
    */
-  public static String jenkinsJobName(BuildConfig bc, String defaultNamespace) {
+  public static String jenkinsJobName(BuildConfig bc) {
     String namespace = bc.getMetadata().getNamespace();
     String name = bc.getMetadata().getName();
-    return jenkinsJobName(namespace, name, defaultNamespace);
+    return jenkinsJobName(namespace, name);
   }
 
   /**
-   * Creates the Jenkins Job name for the given buildConfigName in a namespace and the default namespace for jenkins
+   * Creates the Jenkins Job name for the given buildConfigName
    *
    * @param namespace the namespace of the build
    * @param buildConfigName the name of the {@link BuildConfig} in in the namespace
-   * @param defaultNamespace the default namespace that Jenkins is running inside, which
-   *                         by doesn't prefix itself in front of jenkins job names
-   * @return the jenkins job name for the given namespace and build config name and default namesapce
+   * @return the jenkins job name for the given namespace and name
    */
-  public static String jenkinsJobName(String namespace, String buildConfigName, String defaultNamespace) {
-    if (namespace == null || namespace.length() == 0 || namespace.equals(defaultNamespace)) {
-      return buildConfigName;
-    }
+  public static String jenkinsJobName(String namespace, String buildConfigName) {
     return namespace + "-" + buildConfigName;
+  }
+
+  /**
+   * Finds the Jenkins job display name for the given {@link BuildConfig}.
+   *
+   * @param bc the BuildConfig
+   * @return the jenkins job display name for the given BuildConfig
+   */
+  public static String jenkinsJobDisplayName(BuildConfig bc) {
+    String namespace = bc.getMetadata().getNamespace();
+    String name = bc.getMetadata().getName();
+    return jenkinsJobDisplayName(namespace, name);
+  }
+
+  /**
+   * Creates the Jenkins Job display name for the given buildConfigName
+   *
+   * @param namespace the namespace of the build
+   * @param buildConfigName the name of the {@link BuildConfig} in in the namespace
+   * @return the jenkins job display name for the given namespace and name
+   */
+  public static String jenkinsJobDisplayName(String namespace, String buildConfigName) {
+    return namespace + "/" + buildConfigName;
   }
 
   /**
@@ -153,7 +175,7 @@ public class OpenShiftUtils {
     if (StringUtils.isBlank(namespace)) {
       namespace = client.getNamespace();
       if (StringUtils.isBlank(namespace)) {
-        namespace = "default";
+        namespace = OPENSHIFT_DEFAULT_NAMESPACE;
       }
     }
     return namespace;
@@ -184,7 +206,7 @@ public class OpenShiftUtils {
         }
       }
     } catch (Exception e) {
-      logger.log(Level.WARNING, "Could not find Route for namespace " + namespace + " service " + serviceName + ". " + e, e);
+      logger.log(Level.WARNING, "Could not find Route for service " + namespace + "/" + serviceName + ". " + e, e);
     }
     // lets try the portalIP instead
     try {
@@ -199,7 +221,7 @@ public class OpenShiftUtils {
         }
       }
     } catch (Exception e) {
-      logger.log(Level.WARNING, "Could not find Route for namespace " + namespace + " service " + serviceName + ". " + e, e);
+      logger.log(Level.WARNING, "Could not find Route for service " + namespace + "/" + serviceName + ". " + e, e);
     }
 
     // lets default to the service DNS name
@@ -244,11 +266,11 @@ public class OpenShiftUtils {
     gitSource.setRef(ref);
   }
 
-  public static void cancelOpenShiftBuild(Build build) {
-    logger.info("cancelling build in namespace " + build.getMetadata().getNamespace() + " with name: " + build.getMetadata().getName());
+  public static void updateOpenShiftBuildPhase(Build build, String phase) {
+    logger.log(FINE, "setting build to {0} in namespace {1}/{2}", new Object[]{phase, build.getMetadata().getNamespace(), build.getMetadata().getName()});
     getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
       .edit()
-      .editStatus().withPhase(CANCELLED).endStatus()
+      .editStatus().withPhase(phase).endStatus()
       .done();
   }
 
@@ -257,12 +279,12 @@ public class OpenShiftUtils {
    *
    * @return the namespaced name for the BuildConfig
    * @param jobName the job to associate to a BuildConfig name
-   * @param defaultNamespace the default namespace that Jenkins is running inside
+   * @param namespace the default namespace that Jenkins is running inside
    */
-  public static NamespaceName buildConfigNameFromJenkinsJobName(String jobName, String defaultNamespace) {
+  public static NamespaceName buildConfigNameFromJenkinsJobName(String jobName, String namespace) {
     // TODO lets detect the namespace separator in the jobName for cases where a jenkins is used for
     // BuildConfigs in multiple namespaces?
-    return new NamespaceName(defaultNamespace, jobName);
+    return new NamespaceName(namespace, jobName);
   }
 
   public static long parseResourceVersion(HasMetadata obj) {
@@ -300,6 +322,19 @@ public class OpenShiftUtils {
     statelessMapper.addMixInAnnotations(ObjectMeta.class, ObjectMetaMixIn.class);
     statelessMapper.addMixInAnnotations(ReplicationController.class, StatelessReplicationControllerMixIn.class);
     return statelessMapper.writeValueAsString(obj);
+  }
+
+  public static boolean isCancellable(BuildStatus buildStatus) {
+    String phase = buildStatus.getPhase();
+    return phase.equals(NEW) || phase.equals(PENDING) || phase.equals(RUNNING);
+  }
+
+  public static boolean isNew(BuildStatus buildStatus) {
+    return buildStatus.getPhase().equals(NEW);
+  }
+
+  public static boolean isCancelled(BuildStatus status) {
+    return status != null && status.getCancelled() != null && Boolean.TRUE.equals(status.getCancelled());
   }
 
   abstract class StatelessReplicationControllerMixIn extends ReplicationController {

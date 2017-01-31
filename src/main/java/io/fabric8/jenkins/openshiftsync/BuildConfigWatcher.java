@@ -16,8 +16,10 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.BulkChange;
 import hudson.model.Job;
 import hudson.security.ACL;
+import hudson.triggers.SafeTimerTask;
 import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
@@ -28,22 +30,33 @@ import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
 import org.apache.tools.ant.filters.StringInputStream;
-import org.jvnet.hudson.reactor.ReactorException;
+import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToJob;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.initializeBuildConfigToJobMap;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.putJobWithBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.removeJobWithBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
+import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobDisplayName;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobName;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
 import static java.net.HttpURLConnection.HTTP_GONE;
+import static java.util.logging.Level.SEVERE;
 
 /**
  * Watches {@link BuildConfig} objects in OpenShift and for WorkflowJobs we ensure there is a
@@ -53,57 +66,43 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private final Logger logger = Logger.getLogger(getClass().getName());
   private final String namespace;
   private Watch buildConfigWatch;
+  private ScheduledFuture relister;
 
-  public BuildConfigWatcher(String defaultNamespace) {
-    this.namespace = defaultNamespace;
+  public BuildConfigWatcher(String namespace) {
+    this.namespace = namespace;
   }
 
-  public void start() {
-    final BuildConfigList buildConfigs;
-    if (namespace != null && !namespace.isEmpty()) {
-      buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
-      buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
-    } else {
-      buildConfigs = getOpenShiftClient().buildConfigs().inAnyNamespace().list();
-      buildConfigWatch = getOpenShiftClient().buildConfigs().withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(this);
-    }
+  public synchronized void start() {
+    initializeBuildConfigToJobMap();
 
     // lets process the initial state
     logger.info("Now handling startup build configs!!");
     // lets do this in a background thread to avoid errors like:
     //  Tried proxying io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to support a circular dependency, but it is not an interface.
-    Runnable task = new Runnable() {
+    Runnable task = new SafeTimerTask() {
       @Override
-      public void run() {
-        logger.info("Waiting for Jenkins to be started");
-        while (true) {
-          Jenkins jenkins = Jenkins.getInstance();
-          if (jenkins != null) {
-            if (jenkins.isAcceptingTasks()) {
-              break;
-            }
-          }
-          try {
-            Thread.sleep(500);
-          } catch (InterruptedException e) {
-            // ignore
-          }
-        }
-        logger.info("loading initial BuildConfigs resources");
-
+      public void doRun() {
         try {
+          logger.fine("listing BuildConfigs resources");
+          final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
           onInitialBuildConfigs(buildConfigs);
-          logger.info("loaded initial BuildConfigs resources");
+          logger.fine("handled BuildConfigs resources");
+          if (buildConfigWatch == null) {
+            buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this);
+          }
         } catch (Exception e) {
-          logger.log(Level.SEVERE, "Failed to load initial BuildConfigs: " + e, e);
+          logger.log(SEVERE, "Failed to load BuildConfigs: " + e, e);
         }
       }
     };
-    // lets give jenkins a while to get started ;)
-    Timer.get().schedule(task, 500, TimeUnit.MILLISECONDS);
+    relister = Timer.get().scheduleAtFixedRate(task, 100, 10 * 1000, TimeUnit.MILLISECONDS);
   }
 
-  public void stop() {
+  public synchronized void stop() {
+    if (relister != null && !relister.isDone()) {
+      relister.cancel(true);
+      relister = null;
+    }
     if (buildConfigWatch != null) {
       buildConfigWatch.close();
       buildConfigWatch = null;
@@ -111,7 +110,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
   }
 
   @Override
-  public void onClose(KubernetesClientException e) {
+  public synchronized void onClose(KubernetesClientException e) {
     if (e != null) {
       logger.warning(e.toString());
 
@@ -122,15 +121,14 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  public void onInitialBuildConfigs(BuildConfigList buildConfigs) {
+  private synchronized void onInitialBuildConfigs(BuildConfigList buildConfigs) {
     List<BuildConfig> items = buildConfigs.getItems();
     if (items != null) {
       for (BuildConfig buildConfig : items) {
         try {
           upsertJob(buildConfig);
-        } catch (IOException e) {
-          e.printStackTrace();
+        } catch (Exception e) {
+          logger.log(SEVERE, "Failed to update job", e);
         }
       }
     }
@@ -138,7 +136,7 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
 
   @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
   @Override
-  public void eventReceived(Watcher.Action action, BuildConfig buildConfig) {
+  public synchronized void eventReceived(Watcher.Action action, BuildConfig buildConfig) {
     try {
       switch (action) {
         case ADDED:
@@ -156,64 +154,85 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
-  private void upsertJob(final BuildConfig buildConfig) throws IOException {
+  private void upsertJob(final BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
-      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, IOException>() {
+      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
         @Override
-        public Void call() throws IOException {
-          String jobName = OpenShiftUtils.jenkinsJobName(buildConfig, namespace);
-          Job jobFromBuildConfig = mapBuildConfigToJob(buildConfig, namespace);
-          if (jobFromBuildConfig == null) {
+        public Void call() throws Exception {
+          String jobName = jenkinsJobName(buildConfig);
+          WorkflowJob job = getJobFromBuildConfig(buildConfig);
+          boolean newJob = job == null;
+          if (newJob) {
+            job = new WorkflowJob(Jenkins.getActiveInstance(), jobName);
+          }
+          BulkChange bk = new BulkChange(job);
+
+          job.setDisplayName(jenkinsJobDisplayName(buildConfig));
+
+          FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig);
+          if (flowFromBuildConfig == null) {
             return null;
           }
 
-          String contextDir = null;
-          if (buildConfig.getSpec() != null && buildConfig.getSpec().getSource() != null) {
-            contextDir = buildConfig.getSpec().getSource().getContextDir();
+          job.setDefinition(flowFromBuildConfig);
+
+          String existingBuildRunPolicy = null;
+
+          BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
+          if (buildConfigProjectProperty != null) {
+            existingBuildRunPolicy = buildConfigProjectProperty.getBuildRunPolicy();
+            long updatedBCResourceVersion = parseResourceVersion(buildConfig);
+            long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
+            BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
+            if (updatedBCResourceVersion <= oldBCResourceVersion &&
+              newProperty.getUid().equals(buildConfigProjectProperty.getUid()) &&
+              newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace()) &&
+              newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
+              newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
+              ) {
+              return null;
+            }
+            buildConfigProjectProperty.setUid(newProperty.getUid());
+            buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
+            buildConfigProjectProperty.setName(newProperty.getName());
+            buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
+            buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
+          } else {
+            job.addProperty(
+              new BuildConfigProjectProperty(buildConfig)
+            );
           }
 
-          jobFromBuildConfig.addProperty(
-            new BuildConfigProjectProperty(
-              buildConfig.getMetadata().getNamespace(),
-              buildConfig.getMetadata().getName(),
-              buildConfig.getMetadata().getUid(),
-              buildConfig.getMetadata().getResourceVersion(),
-              contextDir
-            )
+          job.setConcurrentBuild(
+            !(buildConfig.getSpec().getRunPolicy().equals(SERIAL) ||
+              buildConfig.getSpec().getRunPolicy().equals(SERIAL_LATEST_ONLY))
           );
 
-          InputStream jobStream = new StringInputStream(new XStream2().toXML(jobFromBuildConfig));
+          InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
-          Jenkins jenkins = Jenkins.getInstance();
-          Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
-          if (job == null) {
-            jenkins.createProjectFromXML(
+          if (newJob) {
+            Jenkins.getActiveInstance().createProjectFromXML(
               jobName,
               jobStream
-            );
+            ).save();
             logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
           } else {
-            BuildConfigProjectProperty buildConfigProjectProperty = (BuildConfigProjectProperty) job.getProperty(BuildConfigProjectProperty.class);
-            if (buildConfigProjectProperty != null) {
-              long updatedBCResourceVersion = parseResourceVersion(buildConfig);
-              long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
-              if (oldBCResourceVersion > updatedBCResourceVersion) {
-                return null;
-              }
-            }
             Source source = new StreamSource(jobStream);
             job.updateByXml(source);
             job.save();
             logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
+            if (existingBuildRunPolicy != null && !existingBuildRunPolicy.equals(buildConfigProjectProperty.getBuildRunPolicy())) {
+              maybeScheduleNext(job);
+            }
           }
+          bk.commit();
+          putJobWithBuildConfig(Jenkins.getActiveInstance().getItemByFullName(job.getFullName(), WorkflowJob.class), buildConfig);
           return null;
         }
       });
     }
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void modifyJob(BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
       upsertJob(buildConfig);
@@ -224,21 +243,17 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     deleteJob(buildConfig);
   }
 
-  @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
   private void deleteJob(final BuildConfig buildConfig) throws Exception {
-    final Job job = BuildTrigger.getDscp().getJobFromBuildConfigUid(buildConfig.getMetadata().getUid());
+    final Job job = getJobFromBuildConfig(buildConfig);
     if (job != null) {
       ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
         @Override
         public Void call() throws Exception {
-          job.delete();
           try {
-            Jenkins jenkins = Jenkins.getInstance();
-            if (jenkins != null) {
-              jenkins.reload();
-            }
-          } catch (ReactorException e) {
-            logger.log(Level.SEVERE, "Failed to reload jenkins job after deleting " + job.getName() + " from BuildConfig " + NamespaceName.create(buildConfig));
+            job.delete();
+          } finally {
+            removeJobWithBuildConfig(buildConfig);
+            Jenkins.getActiveInstance().rebuildDependencyGraphAsync();
           }
           return null;
         }
