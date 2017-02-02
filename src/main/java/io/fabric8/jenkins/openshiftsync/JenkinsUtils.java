@@ -16,25 +16,33 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.model.Action;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Job;
 import hudson.model.Queue;
 import hudson.model.TopLevelItem;
+import hudson.plugins.git.RevisionParameterAction;
 import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
+import io.fabric8.openshift.api.model.GitBuildSource;
+import io.fabric8.openshift.api.model.GitSourceRevision;
+import io.fabric8.openshift.api.model.SourceRevision;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
 import org.apache.commons.lang.StringUtils;
+import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -54,6 +62,7 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
 import static java.util.Collections.sort;
+import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static org.apache.commons.lang.StringUtils.isBlank;
 
@@ -119,7 +128,26 @@ public class JenkinsUtils {
 
     updateSourceCredentials(buildConfig);
 
-    if (job.scheduleBuild2(0, new CauseAction(new BuildCause(build, bcProp.getUid()))) != null) {
+    List<Action> buildActions = new ArrayList<Action>();
+    buildActions.add(new CauseAction(new BuildCause(build, bcProp.getUid())));
+
+    GitBuildSource gitBuildSource = build.getSpec().getSource().getGit();
+    SourceRevision sourceRevision = build.getSpec().getRevision();
+
+    if (gitBuildSource != null && sourceRevision != null) {
+      sourceRevision = build.getSpec().getRevision();
+      GitSourceRevision gitSourceRevision = sourceRevision.getGit();
+      if (gitSourceRevision != null) {
+        try {
+          URIish repoURL = new URIish(gitBuildSource.getUri());
+          buildActions.add(new RevisionParameterAction(gitSourceRevision.getCommit(), repoURL));
+        } catch (URISyntaxException e) {
+          LOGGER.log(SEVERE, "Failed to parse git repo URL" + gitBuildSource.getUri(), e);
+        }
+      }
+    }
+
+    if (job.scheduleBuild2(0, buildActions.toArray(new Action[buildActions.size()])) != null) {
       updateOpenShiftBuildPhase(build, PENDING);
       // If builds are queued too quickly, Jenkins can add the cause to the previous queued build so let's add a tiny
       // sleep.
