@@ -135,7 +135,6 @@ public class JenkinsUtils {
     SourceRevision sourceRevision = build.getSpec().getRevision();
 
     if (gitBuildSource != null && sourceRevision != null) {
-      sourceRevision = build.getSpec().getRevision();
       GitSourceRevision gitSourceRevision = sourceRevision.getGit();
       if (gitSourceRevision != null) {
         try {
