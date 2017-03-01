@@ -17,24 +17,33 @@ package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Action;
+import hudson.model.ParameterDefinition;
+import hudson.model.ParameterValue;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.Job;
+import hudson.model.ParametersAction;
+import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Queue;
+import hudson.model.StringParameterDefinition;
+import hudson.model.StringParameterValue;
 import hudson.model.TopLevelItem;
 import hudson.plugins.git.RevisionParameterAction;
 import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
+import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.GitSourceRevision;
+import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import io.fabric8.openshift.api.model.SourceRevision;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
+
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -44,7 +53,9 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -88,6 +99,42 @@ public class JenkinsUtils {
     }
     return root;
   }
+  
+  public static void addJobParamForBuildEnvs(WorkflowJob job, JenkinsPipelineBuildStrategy strat, boolean replaceExisting) throws IOException {
+      List<EnvVar> envs = strat.getEnv();
+      if (envs.size() > 0) {
+          // get existing property defs, including any manually added from the jenkins console independent of BC
+          ParametersDefinitionProperty params = job.removeProperty(ParametersDefinitionProperty.class);
+          List<ParameterDefinition> existingParamList = params.getParameterDefinitions();
+          Map<String, ParameterDefinition> paramMap = new HashMap<String, ParameterDefinition>();
+          // store in map for easy key lookup
+          for (ParameterDefinition param : existingParamList) {
+              paramMap.put(param.getName(), param);
+          }
+          for (EnvVar env : envs) {
+              if (replaceExisting || !paramMap.containsKey(env.getName())) {
+                  StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), env.getValue());
+                  paramMap.put(env.getName(), envVar);
+              }
+          }
+          List<ParameterDefinition> newParamList = new ArrayList<ParameterDefinition>(paramMap.values());
+          job.addProperty(new ParametersDefinitionProperty(newParamList));
+      }
+  }
+  
+  public static List<Action> setJobRunParamsFromEnv(JenkinsPipelineBuildStrategy strat, List<Action> buildActions) {
+      List<EnvVar> envs = strat.getEnv();
+      if (envs.size() > 0) {
+          List<ParameterValue> envVarList = new ArrayList<ParameterValue>();
+          for (EnvVar env : envs) {
+              StringParameterValue envVar = new StringParameterValue(env.getName(),env.getValue());
+              envVarList.add(envVar);
+          }
+          buildActions.add(new ParametersAction(envVarList));
+      }
+
+      return buildActions;
+  }
 
   public static boolean triggerJob(WorkflowJob job, Build build) throws IOException {
     if (isAlreadyTriggered(job, build)) {
@@ -113,7 +160,7 @@ public class JenkinsUtils {
         break;
       case SERIAL:
         if (job.isInQueue() || job.isBuilding()) {
-          return false;
+            return false;
         }
         break;
       default:
@@ -145,6 +192,13 @@ public class JenkinsUtils {
         }
       }
     }
+    
+    // grab envs from actual build in case user overrode default values via `oc start-build -e`
+    JenkinsPipelineBuildStrategy strat = build.getSpec().getStrategy().getJenkinsPipelineStrategy();
+    // only add new param defs for build envs which are not in build config envs
+    addJobParamForBuildEnvs(job, strat, false);
+    // now add the actual param values stemming from openshift build env vars for this specific job
+    buildActions = setJobRunParamsFromEnv(strat, buildActions);
 
     if (job.scheduleBuild2(0, buildActions.toArray(new Action[buildActions.size()])) != null) {
       updateOpenShiftBuildPhase(build, PENDING);
@@ -157,6 +211,7 @@ public class JenkinsUtils {
       }
       return true;
     }
+
     return false;
   }
 

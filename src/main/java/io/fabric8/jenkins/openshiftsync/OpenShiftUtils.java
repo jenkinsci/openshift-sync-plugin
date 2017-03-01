@@ -214,7 +214,7 @@ public class OpenShiftUtils {
       if (service != null) {
         ServiceSpec spec = service.getSpec();
         if (spec != null) {
-          String host = spec.getPortalIP();
+          String host = spec.getClusterIP();
           if (host != null && host.length() > 0) {
             return defaultProtocolText + host;
           }
