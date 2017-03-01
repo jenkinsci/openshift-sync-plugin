@@ -68,14 +68,11 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
   private transient AtomicBoolean timerStarted = new AtomicBoolean(false);
 
-  public BuildSyncRunListener() {
-    init();
-  }
+  public BuildSyncRunListener() {}
 
   @DataBoundConstructor
   public BuildSyncRunListener(long pollPeriodMs) {
     this.pollPeriodMs = pollPeriodMs;
-    init();
   }
 
   /**
@@ -101,10 +98,6 @@ public class BuildSyncRunListener extends RunListener<Run> {
       .replaceAll("/\\?", "?")
       .replaceAll("/#", "#")
       .replaceAll(":/", "://");
-  }
-
-  private void init() {
-    namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace, getOpenShiftClient());
   }
 
   @Override
@@ -208,7 +201,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       return;
     }
 
-    String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), namespace);
+    String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), cause.getNamespace());
     String buildUrl = joinPaths(rootUrl, run.getUrl());
     String logsUrl = joinPaths(buildUrl, "/consoleText");
 

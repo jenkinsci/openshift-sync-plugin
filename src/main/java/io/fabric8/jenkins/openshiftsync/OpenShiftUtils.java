@@ -166,19 +166,19 @@ public class OpenShiftUtils {
   /**
    * Gets the current namespace running Jenkins inside or returns a reasonable default
    *
-   * @param configuredNamespace the optional configured namespace
+   * @param configuredNamespaces the optional configured namespace(s)
    * @param client the OpenShift client
    * @return the default namespace using either the configuration value, the default namespace on the client or "default"
    */
-  public static String getNamespaceOrUseDefault(String configuredNamespace, OpenShiftClient client) {
-    String namespace = configuredNamespace;
-    if (StringUtils.isBlank(namespace)) {
-      namespace = client.getNamespace();
-      if (StringUtils.isBlank(namespace)) {
-        namespace = OPENSHIFT_DEFAULT_NAMESPACE;
+  public static String[] getNamespaceOrUseDefault(String[] configuredNamespaces, OpenShiftClient client) {
+    String[] namespaces = configuredNamespaces;
+    if (namespaces==null || namespaces.length==0) {
+      namespaces = new String[]{client.getNamespace()};
+      if (StringUtils.isBlank(namespaces[0])) {
+        namespaces = new String[]{OPENSHIFT_DEFAULT_NAMESPACE};
       }
     }
-    return namespace;
+    return namespaces;
   }
 
   /**
@@ -241,9 +241,9 @@ public class OpenShiftUtils {
 
   /**
    * Lazily creates the GitSource if need be then updates the git URL
-   *  @param buildConfig the BuildConfig to update
+   * @param buildConfig the BuildConfig to update
    * @param gitUrl the URL to the git repo
-   * @param ref
+   * @param ref the git ref (commit/branch/etc) for the build
    */
   public static void updateGitSourceUrl(BuildConfig buildConfig, String gitUrl, String ref) {
     BuildConfigSpec spec = buildConfig.getSpec();

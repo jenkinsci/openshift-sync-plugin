@@ -23,6 +23,7 @@ import jenkins.model.GlobalConfiguration;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 import net.sf.json.JSONObject;
+import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
@@ -42,7 +43,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private String server;
 
-  private String namespace;
+  private String[] namespaces;
 
   private transient BuildWatcher buildWatcher;
 
@@ -52,7 +53,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
     this.enabled = enable;
     this.server = server;
-    this.namespace = namespace;
+    this.namespaces = StringUtils.isBlank(namespace)?null:namespace.split(" ");
     configChange();
   }
 
@@ -96,11 +97,11 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   }
 
   public String getNamespace() {
-    return namespace;
+    return namespaces==null?"":StringUtils.join(namespaces," ");
   }
 
   public void setNamespace(String namespace) {
-    this.namespace = namespace;
+    this.namespaces = StringUtils.isBlank(namespace)?null:namespace.split(" ");
   }
 
   private void configChange() {
@@ -116,7 +117,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
     }
     try {
       OpenShiftUtils.initializeOpenShiftClient(server);
-      this.namespace = getNamespaceOrUseDefault(namespace, getOpenShiftClient());
+      this.namespaces = getNamespaceOrUseDefault(namespaces, getOpenShiftClient());
+
 
       Runnable task = new SafeTimerTask() {
         @Override
@@ -143,9 +145,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
             }
           }
 
-          buildConfigWatcher = new BuildConfigWatcher(namespace);
+          buildConfigWatcher = new BuildConfigWatcher(namespaces);
           buildConfigWatcher.start();
-          buildWatcher = new BuildWatcher(namespace);
+          buildWatcher = new BuildWatcher(namespaces);
           buildWatcher.start();
         }
       };
