@@ -47,25 +47,20 @@ import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.initializeBuildConfigToJobMap;
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.putJobWithBuildConfig;
-import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.removeJobWithBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.*;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isJenkinsBuildConfig;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobDisplayName;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobName;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.*;
 import static java.net.HttpURLConnection.HTTP_GONE;
 import static java.util.logging.Level.SEVERE;
 
@@ -75,12 +70,15 @@ import static java.util.logging.Level.SEVERE;
  */
 public class BuildConfigWatcher implements Watcher<BuildConfig> {
   private final Logger logger = Logger.getLogger(getClass().getName());
-  private final String namespace;
-  private Watch buildConfigWatch;
+  private final String[] namespaces;
+  private Map<String,Watch> buildConfigWatches;
+  
   private ScheduledFuture relister;
 
-  public BuildConfigWatcher(String namespace) {
-    this.namespace = namespace;
+  @SuppressFBWarnings("EI_EXPOSE_REP2")
+  public BuildConfigWatcher(String[] namespaces) {
+	  this.namespaces = namespaces;
+	  this.buildConfigWatches=new HashMap<String,Watch>();
   }
 
   public synchronized void start() {
@@ -93,16 +91,18 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
     Runnable task = new SafeTimerTask() {
       @Override
       public void doRun() {
-        try {
-          logger.fine("listing BuildConfigs resources");
-          final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
-          onInitialBuildConfigs(buildConfigs);
-          logger.fine("handled BuildConfigs resources");
-          if (buildConfigWatch == null) {
-            buildConfigWatch = getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this);
+        for(String namespace:namespaces) {
+          try {
+            logger.fine("listing BuildConfigs resources");
+            final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
+            onInitialBuildConfigs(buildConfigs);
+            logger.fine("handled BuildConfigs resources");
+            if (buildConfigWatches.get(namespace) == null) {
+              buildConfigWatches.put(namespace,getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this));
+            }
+          } catch (Exception e) {
+            logger.log(SEVERE, "Failed to load BuildConfigs: " + e, e);
           }
-        } catch (Exception e) {
-          logger.log(SEVERE, "Failed to load BuildConfigs: " + e, e);
         }
       }
     };
@@ -114,9 +114,10 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
       relister.cancel(true);
       relister = null;
     }
-    if (buildConfigWatch != null) {
-      buildConfigWatch.close();
-      buildConfigWatch = null;
+
+    for(Map.Entry<String,Watch> entry:buildConfigWatches.entrySet()) {
+      entry.getValue().close();
+      buildConfigWatches.remove(entry.getKey());
     }
   }
 

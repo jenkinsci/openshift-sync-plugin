@@ -15,6 +15,7 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.listeners.ItemListener;
@@ -43,21 +44,22 @@ public class PipelineJobListener extends ItemListener {
   private static final Logger logger = Logger.getLogger(PipelineJobListener.class.getName());
 
   private String server;
-  private String namespace;
+  private String[] namespaces;
 
   public PipelineJobListener() {
     init();
   }
 
   @DataBoundConstructor
-  public PipelineJobListener(String server, String namespace) {
+  @SuppressFBWarnings("EI_EXPOSE_REP2")
+  public PipelineJobListener(String server, String[] namespaces) {
     this.server = server;
-    this.namespace = namespace;
+    this.namespaces = namespaces;
     init();
   }
 
   private void init() {
-    namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace, getOpenShiftClient());
+    namespaces = OpenShiftUtils.getNamespaceOrUseDefault(namespaces, getOpenShiftClient());
   }
 
   @Override
@@ -81,7 +83,7 @@ public class PipelineJobListener extends ItemListener {
         && isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getNamespace())
         && isNotBlank(job.getProperty(BuildConfigProjectProperty.class).getName())) {
 
-        NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), namespace);
+        NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(), job.getProperty(BuildConfigProjectProperty.class).getNamespace());
         logger.info("Deleting BuildConfig " + buildName);
 
         String namespace = buildName.getNamespace();
