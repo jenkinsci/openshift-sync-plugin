@@ -1,6 +1,6 @@
 # openshift-jenkins-sync-plugin
 
-This Jenkins plugin keeps OpenShift BuildConfig and Build objects in sync With Jenkins Jobs and Builds.
+This Jenkins plugin keeps OpenShift BuildConfig and Build objects in sync with Jenkins Jobs and Builds.
 
 The synchronization works like this
 
