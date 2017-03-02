@@ -105,15 +105,22 @@ public class JenkinsUtils {
       if (envs.size() > 0) {
           // get existing property defs, including any manually added from the jenkins console independent of BC
           ParametersDefinitionProperty params = job.removeProperty(ParametersDefinitionProperty.class);
-          List<ParameterDefinition> existingParamList = params.getParameterDefinitions();
           Map<String, ParameterDefinition> paramMap = new HashMap<String, ParameterDefinition>();
-          // store in map for easy key lookup
-          for (ParameterDefinition param : existingParamList) {
-              paramMap.put(param.getName(), param);
+          // store any existing parameters in map for easy key lookup
+          if (params != null) {
+              List<ParameterDefinition> existingParamList = params.getParameterDefinitions();
+              for (ParameterDefinition param : existingParamList) {
+                  paramMap.put(param.getName(), param);
+              }
           }
           for (EnvVar env : envs) {
-              if (replaceExisting || !paramMap.containsKey(env.getName())) {
+              if (replaceExisting) {
                   StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), env.getValue());
+                  paramMap.put(env.getName(), envVar);
+              } else if (!paramMap.containsKey(env.getName())) {
+                  // if list from BC did not have this parameter, it was added via `oc start-build -e` ... in this 
+                  // case, we have chosen to make the default value an empty string
+                  StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), "");
                   paramMap.put(env.getName(), envVar);
               }
           }
