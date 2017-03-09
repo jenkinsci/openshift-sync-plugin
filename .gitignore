@@ -26,6 +26,9 @@ buildNumber.properties
 
 *.iml
 
+# repo specific PR testing
+PR-Testing/jpi/
+
 # Eclipse
 .classpath
 .project
