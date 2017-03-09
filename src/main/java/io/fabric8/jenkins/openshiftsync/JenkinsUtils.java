@@ -19,12 +19,17 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.Action;
 import hudson.model.ParameterDefinition;
 import hudson.model.ParameterValue;
+import hudson.model.BooleanParameterDefinition;
 import hudson.model.Cause;
 import hudson.model.CauseAction;
+import hudson.model.ChoiceParameterDefinition;
+import hudson.model.FileParameterDefinition;
 import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
+import hudson.model.PasswordParameterDefinition;
 import hudson.model.Queue;
+import hudson.model.RunParameterDefinition;
 import hudson.model.StringParameterDefinition;
 import hudson.model.StringParameterValue;
 import hudson.model.TopLevelItem;
@@ -48,6 +53,8 @@ import org.apache.commons.lang.StringUtils;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+
+import com.cloudbees.plugins.credentials.CredentialsParameterDefinition;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -82,6 +89,7 @@ import static org.apache.commons.lang.StringUtils.isBlank;
 public class JenkinsUtils {
 
   private static final Logger LOGGER = Logger.getLogger(JenkinsUtils.class.getName());
+  private static final String PARAM_FROM_ENV_DESCRIPTION = "From OpenShift Build Environment Variable";
 
   public static Job getJob(String job) {
     TopLevelItem item = Jenkins.getActiveInstance().getItem(job);
@@ -103,6 +111,12 @@ public class JenkinsUtils {
   public static void addJobParamForBuildEnvs(WorkflowJob job, JenkinsPipelineBuildStrategy strat, boolean replaceExisting) throws IOException {
       List<EnvVar> envs = strat.getEnv();
       if (envs.size() > 0) {
+          // build list of current env var names for possible deletion of env vars currently stored
+          // as job params
+          List<String> envKeys = new ArrayList<String>();
+          for (EnvVar env : envs) {
+              envKeys.add(env.getName());
+          }
           // get existing property defs, including any manually added from the jenkins console independent of BC
           ParametersDefinitionProperty params = job.removeProperty(ParametersDefinitionProperty.class);
           Map<String, ParameterDefinition> paramMap = new HashMap<String, ParameterDefinition>();
@@ -110,17 +124,23 @@ public class JenkinsUtils {
           if (params != null) {
               List<ParameterDefinition> existingParamList = params.getParameterDefinitions();
               for (ParameterDefinition param : existingParamList) {
-                  paramMap.put(param.getName(), param);
+                  // if a user supplied param, add
+                  if (param.getDescription() == null || !param.getDescription().equals(PARAM_FROM_ENV_DESCRIPTION))
+                      paramMap.put(param.getName(), param);
+                  else if (envKeys.contains(param.getName())) {
+                      // the env var still exists on the openshift side so keep
+                      paramMap.put(param.getName(), param);
+                  }
               }
           }
           for (EnvVar env : envs) {
               if (replaceExisting) {
-                  StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), env.getValue());
+                  StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), env.getValue(), PARAM_FROM_ENV_DESCRIPTION);
                   paramMap.put(env.getName(), envVar);
               } else if (!paramMap.containsKey(env.getName())) {
                   // if list from BC did not have this parameter, it was added via `oc start-build -e` ... in this 
                   // case, we have chosen to make the default value an empty string
-                  StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), "");
+                  StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), "", PARAM_FROM_ENV_DESCRIPTION);
                   paramMap.put(env.getName(), envVar);
               }
           }
@@ -129,16 +149,77 @@ public class JenkinsUtils {
       }
   }
   
-  public static List<Action> setJobRunParamsFromEnv(JenkinsPipelineBuildStrategy strat, List<Action> buildActions) {
+  public static List<Action> setJobRunParamsFromEnv(WorkflowJob job, JenkinsPipelineBuildStrategy strat, List<Action> buildActions) {
       List<EnvVar> envs = strat.getEnv();
+      List<String> envKeys = new ArrayList<String>();
+      List<ParameterValue> envVarList = new ArrayList<ParameterValue>();
       if (envs.size() > 0) {
-          List<ParameterValue> envVarList = new ArrayList<ParameterValue>();
+          // build list of env var keys for compare with existing job params
           for (EnvVar env : envs) {
-              StringParameterValue envVar = new StringParameterValue(env.getName(),env.getValue());
-              envVarList.add(envVar);
+              envKeys.add(env.getName());
+              envVarList.add(new StringParameterValue(env.getName(),env.getValue()));
           }
-          buildActions.add(new ParametersAction(envVarList));
       }
+      
+      // add any existing job params that were not env vars, using their default values
+      ParametersDefinitionProperty params = job.getProperty(ParametersDefinitionProperty.class);
+      if (params != null) {
+          List<ParameterDefinition> existingParamList = params.getParameterDefinitions();
+          for (ParameterDefinition param : existingParamList) {
+              if (!envKeys.contains(param.getName())) {
+                  String type = param.getType();
+                  switch (type) {
+                  case "BooleanParameterDefinition":
+                      BooleanParameterDefinition bpd = (BooleanParameterDefinition)param;
+                      envVarList.add(bpd.getDefaultParameterValue());
+                      break;
+                  case "ChoiceParameterDefintion":
+                      ChoiceParameterDefinition cpd = (ChoiceParameterDefinition)param;
+                      envVarList.add(cpd.getDefaultParameterValue());
+                      break;
+                  case "CredentialsParameterDefinition":
+                      CredentialsParameterDefinition crpd = (CredentialsParameterDefinition)param;
+                      envVarList.add(crpd.getDefaultParameterValue());
+                      break;
+                  case "FileParameterDefinition":
+                      FileParameterDefinition fpd = (FileParameterDefinition)param;
+                      envVarList.add(fpd.getDefaultParameterValue());
+                      break;
+                  // don't currently support since sync-plugin does not claim subversion plugin as a direct dependency
+                  /*case "ListSubversionTagsParameterDefinition":
+                      ListSubversionTagsParameterDefinition lpd = (ListSubversionTagsParameterDefinition)param;
+                      envVarList.add(lpd.getDefaultParameterValue());
+                      break;*/
+                  case "PasswordParameterDefinition":
+                      PasswordParameterDefinition ppd = (PasswordParameterDefinition)param;
+                      envVarList.add(ppd.getDefaultParameterValue());
+                      break;
+                  case "RunParameterDefinition":
+                      RunParameterDefinition rpd = (RunParameterDefinition)param;
+                      envVarList.add(rpd.getDefaultParameterValue());
+                      break;
+                  case "StringParameterDefinition":
+                      StringParameterDefinition spd = (StringParameterDefinition)param;
+                      envVarList.add(spd.getDefaultParameterValue());
+                      break;
+                  default:
+                      // used to have the following:
+                      //envVarList.add(new StringParameterValue(param.getName(), (param.getDefaultParameterValue() != null && param.getDefaultParameterValue().getValue() != null ? param.getDefaultParameterValue().getValue().toString() : "")));
+                      // but mvn verify complained
+                      ParameterValue pv = param.getDefaultParameterValue();
+                      if (pv != null) {
+                          Object val = pv.getValue();
+                          if (val != null) {
+                              envVarList.add(new StringParameterValue(param.getName(), val.toString()));
+                          }
+                      }
+                  }
+              }
+          }          
+      }
+      
+      if (envVarList.size() > 0)
+          buildActions.add(new ParametersAction(envVarList));
 
       return buildActions;
   }
@@ -205,7 +286,7 @@ public class JenkinsUtils {
     // only add new param defs for build envs which are not in build config envs
     addJobParamForBuildEnvs(job, strat, false);
     // now add the actual param values stemming from openshift build env vars for this specific job
-    buildActions = setJobRunParamsFromEnv(strat, buildActions);
+    buildActions = setJobRunParamsFromEnv(job, strat, buildActions);
 
     if (job.scheduleBuild2(0, buildActions.toArray(new Action[buildActions.size()])) != null) {
       updateOpenShiftBuildPhase(build, PENDING);
