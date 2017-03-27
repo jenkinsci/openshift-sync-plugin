@@ -23,6 +23,8 @@ public class Constants {
   public static final String OPENSHIFT_ANNOTATIONS_BUILD_NUMBER = "openshift.io/build.number";
   public static final String OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI = "openshift.io/jenkins-build-uri";
   public static final String OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL = "openshift.io/jenkins-log-url";
+  public static final String OPENSHIFT_ANNOTATIONS_JENKINS_CONSOLE_LOG_URL = "openshift.io/jenkins-console-log-url";
+  public static final String OPENSHIFT_ANNOTATIONS_JENKINS_BLUEOCEAN_LOG_URL = "openshift.io/jenkins-blueocean-log-url";
 
   public static final String OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON = "openshift.io/jenkins-status-json";
   public static final String OPENSHIFT_LABELS_BUILD_CONFIG_NAME = "openshift.io/build-config.name";
