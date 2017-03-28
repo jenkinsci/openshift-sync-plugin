@@ -21,7 +21,9 @@ import com.cloudbees.workflow.rest.external.RunExt;
 import com.cloudbees.workflow.rest.external.StageNodeExt;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import hudson.Extension;
+import hudson.PluginManager;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
@@ -29,17 +31,22 @@ import hudson.model.listeners.RunListener;
 import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.openshift.api.model.Build;
+import jenkins.model.Jenkins;
 import jenkins.util.Timer;
+
 import org.apache.commons.httpclient.HttpStatus;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
+
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI;
@@ -204,6 +211,45 @@ public class BuildSyncRunListener extends RunListener<Run> {
     String rootUrl = OpenShiftUtils.getJenkinsURL(getOpenShiftClient(), cause.getNamespace());
     String buildUrl = joinPaths(rootUrl, run.getUrl());
     String logsUrl = joinPaths(buildUrl, "/consoleText");
+    String logsConsoleUrl = joinPaths(buildUrl, "/console");
+    String logsBlueOceanUrl = null;
+    try {
+        // while we support Jenkins v1 (it is being deprecated in openshift 3.6), need to get at
+        // blueocean plugins via reflection;
+        // On those plugins specifically, there are utility functions in the blueocean-dashboard plugin which construct 
+        // this entire URI; however, attempting to pull that in as a maven dependency was untenable from an injected test perspective;
+        // the blueocean-rest-impl plugin was possible though, and the organization piece was in fact the only one
+        // that was missing for use to construct the entire URL manually.
+        // But with reflection, we can leverage the blueocean-dashboard logic.  Doing so here, but have left the 
+        // blueocean-rest-impl plugin usage as a comment for future reference if we move off of reflection.
+        Jenkins jenkins = Jenkins.getInstance();
+        // NOTE, the excessive null checking is to keep `mvn findbugs:gui` quiet
+        if (jenkins != null) {
+            PluginManager pluginMgr = jenkins.getPluginManager();
+            if (pluginMgr != null) {
+                ClassLoader cl = pluginMgr.uberClassLoader;
+                if (cl != null) {
+                    Class weburlbldr = cl.loadClass("io.jenkins.blueocean.BlueOceanWebURLBuilder");
+                    Method toBlueOceanURLMethod = weburlbldr.getMethod("toBlueOceanURL", hudson.model.ModelObject.class);
+                    Object blueOceanURI = toBlueOceanURLMethod.invoke(null, run);
+                    logsBlueOceanUrl = joinPaths(rootUrl, blueOceanURI.toString());
+                }
+            }
+        }
+        /*
+        Class factoryClass = cl.loadClass("io.jenkins.blueocean.service.embedded.rest.BluePipelineFactory");
+        Method resolveMethod = factoryClass.getMethod("resolve", hudson.model.Item.class);
+        Object resolveReturn = resolveMethod.invoke(null, run.getParent());
+        Method getOrg = resolveReturn.getClass().getMethod("getOrganization", null);
+        Object org = getOrg.invoke(resolveReturn, null);
+        logsBlueOceanUrl = joinPaths(rootUrl, "blue", "organizations", URLEncoder.encode(org.toString(), "UTF-8"), 
+                URLEncoder.encode(run.getParent().getName(), "UTF-8"), "detail",
+                URLEncoder.encode(run.getParent().getName(), "UTF-8"), Integer.toString(run.getNumber()), "pipeline");
+         */
+    } catch (Throwable t) {
+        if (logger.isLoggable(Level.FINE))
+            logger.log(Level.FINE, "upsertBuild", t);
+    }
 
     if (!wfRunExt.get_links().self.href.matches("^https?://.*$")) {
       wfRunExt.get_links().self.setHref(joinPaths(rootUrl, wfRunExt.get_links().self.href));
@@ -256,6 +302,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
         .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_STATUS_JSON, json)
         .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_BUILD_URI, buildUrl)
         .addToAnnotations(OPENSHIFT_ANNOTATIONS_JENKINS_LOG_URL, logsUrl)
+        .addToAnnotations(Constants.OPENSHIFT_ANNOTATIONS_JENKINS_CONSOLE_LOG_URL, logsConsoleUrl)
+        .addToAnnotations(Constants.OPENSHIFT_ANNOTATIONS_JENKINS_BLUEOCEAN_LOG_URL, logsBlueOceanUrl)
         .endMetadata()
         .editStatus()
         .withPhase(phase)
