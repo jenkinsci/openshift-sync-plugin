@@ -15,9 +15,13 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import hudson.Extension;
+import hudson.Util;
 import hudson.model.Computer;
+import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
+import hudson.util.ListBoxModel;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import jenkins.model.GlobalConfiguration;
 import jenkins.model.Jenkins;
@@ -43,6 +47,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private String server;
 
+  private String credentialsId = "";
+
   private String[] namespaces;
 
   private transient BuildWatcher buildWatcher;
@@ -50,10 +56,11 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
   private transient BuildConfigWatcher buildConfigWatcher;
 
   @DataBoundConstructor
-  public GlobalPluginConfiguration(boolean enable, String server, String namespace) {
+  public GlobalPluginConfiguration(boolean enable, String server, String namespace, String credentialsId) {
     this.enabled = enable;
     this.server = server;
     this.namespaces = StringUtils.isBlank(namespace)?null:namespace.split(" ");
+    this.credentialsId = Util.fixEmptyAndTrim(credentialsId);
     configChange();
   }
 
@@ -96,12 +103,41 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
     this.server = server;
   }
 
+  public String getCredentialsId() {
+    return credentialsId;
+  }
+
+  public void setCredentialsId(String credentialsId) {
+    this.credentialsId = Util.fixEmptyAndTrim(credentialsId);
+  }
+
   public String getNamespace() {
     return namespaces==null?"":StringUtils.join(namespaces," ");
   }
 
   public void setNamespace(String namespace) {
     this.namespaces = StringUtils.isBlank(namespace)?null:namespace.split(" ");
+  }
+
+  // https://wiki.jenkins-ci.org/display/JENKINS/Credentials+Plugin
+  // http://javadoc.jenkins-ci.org/credentials/com/cloudbees/plugins/credentials/common/AbstractIdCredentialsListBoxModel.html
+  // https://github.com/jenkinsci/kubernetes-plugin/blob/master/src/main/java/org/csanchez/jenkins/plugins/kubernetes/KubernetesCloud.java
+  public static ListBoxModel doFillCredentialsIdItems(String credentialsId) {
+    Jenkins jenkins = Jenkins.getInstance();
+    if( jenkins == null ) {
+      return (ListBoxModel)null;
+    }
+
+    if (!jenkins.hasPermission(Jenkins.ADMINISTER)) {
+      // Important! Otherwise you expose credentials metadata to random web requests.
+      return new StandardListBoxModel().includeCurrentValue(credentialsId);
+    }
+
+    return new StandardListBoxModel()
+            .includeEmptyValue()
+            .includeAs(ACL.SYSTEM, jenkins, OpenShiftToken.class)
+            .includeCurrentValue(credentialsId)
+            ;
   }
 
   private void configChange() {
@@ -118,7 +154,6 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
     try {
       OpenShiftUtils.initializeOpenShiftClient(server);
       this.namespaces = getNamespaceOrUseDefault(namespaces, getOpenShiftClient());
-
 
       Runnable task = new SafeTimerTask() {
         @Override

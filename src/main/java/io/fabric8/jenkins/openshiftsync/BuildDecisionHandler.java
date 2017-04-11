@@ -27,8 +27,8 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import java.util.List;
 
 import static io.fabric8.jenkins.openshiftsync.BuildSyncRunListener.joinPaths;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getJenkinsURL;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 
 @Extension
 public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
@@ -43,9 +43,9 @@ public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
         && StringUtils.isNotBlank(buildConfigProjectProperty.getName())) {
 
         String namespace = buildConfigProjectProperty.getNamespace();
-        String jobURL = joinPaths(getJenkinsURL(getOpenShiftClient(), namespace), wj.getUrl());
+        String jobURL = joinPaths(getJenkinsURL(getAuthenticatedOpenShiftClient(), namespace), wj.getUrl());
 
-        getOpenShiftClient().buildConfigs()
+        getAuthenticatedOpenShiftClient().buildConfigs()
           .inNamespace(namespace).withName(buildConfigProjectProperty.getName())
           .instantiate(
             new BuildRequestBuilder()

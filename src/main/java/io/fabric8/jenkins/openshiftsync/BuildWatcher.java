@@ -48,11 +48,7 @@ import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.handleBuildList;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isNew;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.*;
 import static java.net.HttpURLConnection.HTTP_GONE;
 import static java.util.logging.Level.WARNING;
 
@@ -78,11 +74,11 @@ public class BuildWatcher implements Watcher<Build> {
         for(String namespace:namespaces) {
           try {
             logger.fine("listing Build resources");
-            BuildList newBuilds = getOpenShiftClient().builds().inNamespace(namespace).withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).list();
+            BuildList newBuilds = getAuthenticatedOpenShiftClient().builds().inNamespace(namespace).withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).list();
             onInitialBuilds(newBuilds);
             logger.fine("handled Build resources");
             if (buildWatches.get(namespace) == null) {
-              buildWatches.put(namespace,getOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this));
+              buildWatches.put(namespace,getAuthenticatedOpenShiftClient().builds().inNamespace(namespace).withResourceVersion(newBuilds.getMetadata().getResourceVersion()).watch(BuildWatcher.this));
             }
           } catch (Exception e) {
             logger.log(Level.SEVERE, "Failed to load initial Builds: " + e, e);
@@ -161,7 +157,7 @@ public class BuildWatcher implements Watcher<Build> {
         String bcMapKey = namespace + "/" + buildConfigName;
         BuildConfig bc = buildConfigMap.get(bcMapKey);
         if (bc == null) {
-          bc = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+          bc = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
           if (bc == null) {
             continue;
           }

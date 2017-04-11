@@ -76,9 +76,7 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_B
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.*;
 import static java.util.Collections.sort;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
@@ -256,7 +254,7 @@ public class JenkinsUtils {
 
     ObjectMeta meta = build.getMetadata();
     String namespace = meta.getNamespace();
-    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+    BuildConfig buildConfig = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
     if (buildConfig == null) {
       return false;
     }
@@ -433,7 +431,7 @@ public class JenkinsUtils {
     if (StringUtils.isEmpty(buildConfigName)) {
       return null;
     }
-    BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
+    BuildConfig buildConfig = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
     if (buildConfig == null) {
       return null;
     }
@@ -445,7 +443,8 @@ public class JenkinsUtils {
     if (bcp == null) {
       return;
     }
-    List<Build> builds = getOpenShiftClient().builds().inNamespace(bcp.getNamespace())
+
+    List<Build> builds = getAuthenticatedOpenShiftClient().builds().inNamespace(bcp.getNamespace())
       .withField(OPENSHIFT_BUILD_STATUS_FIELD, BuildPhases.NEW).withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME, bcp.getName()).list().getItems();
     handleBuildList(job, builds, bcp);
   }

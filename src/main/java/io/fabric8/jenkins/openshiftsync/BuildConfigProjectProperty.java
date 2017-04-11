@@ -23,7 +23,7 @@ import io.fabric8.openshift.api.model.BuildConfig;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.kohsuke.stapler.DataBoundConstructor;
 
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
 
 /**
  * Stores the OpenShift Build Config related project properties.
@@ -66,7 +66,7 @@ public class BuildConfigProjectProperty extends JobProperty<Job<?, ?>> {
   }
 
   public BuildConfig getBuildConfig() {
-    BuildConfig bc = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(name).get();
+    BuildConfig bc = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withName(name).get();
     if (bc != null && bc.getMetadata().getUid().equals(uid)) {
       return bc;
     }

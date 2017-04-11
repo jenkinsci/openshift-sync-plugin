@@ -30,6 +30,7 @@ import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.removeJobWithBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.updateBuildConfigFromJob;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.commons.lang.StringUtils.isNotBlank;
@@ -88,10 +89,10 @@ public class PipelineJobListener extends ItemListener {
 
         String namespace = buildName.getNamespace();
         String buildConfigName = buildName.getName();
-        BuildConfig buildConfig = getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
+        BuildConfig buildConfig = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).get();
         if (buildConfig != null) {
           try {
-            getOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).delete();
+            getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withName(buildConfigName).delete();
           } catch (KubernetesClientException e) {
             if (HTTP_NOT_FOUND != e.getCode()) {
               logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace + " for name: " + buildConfigName, e);
@@ -133,7 +134,7 @@ public class PipelineJobListener extends ItemListener {
     updateBuildConfigFromJob(job, jobBuildConfig);
 
     try {
-      getOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).cascading(false).replace(jobBuildConfig);
+      getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).cascading(false).replace(jobBuildConfig);
     } catch (Exception e) {
       logger.log(Level.WARNING, "Failed to update BuildConfig: " + NamespaceName.create(jobBuildConfig) + ". " + e, e);
     }
