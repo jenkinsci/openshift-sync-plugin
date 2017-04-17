@@ -33,6 +33,7 @@ import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigList;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
+import io.fabric8.openshift.client.OpenShiftClient;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
@@ -94,11 +95,11 @@ public class BuildConfigWatcher implements Watcher<BuildConfig> {
         for(String namespace:namespaces) {
           try {
             logger.fine("listing BuildConfigs resources");
-            final BuildConfigList buildConfigs = getOpenShiftClient().buildConfigs().inNamespace(namespace).list();
+            final BuildConfigList buildConfigs = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).list();
             onInitialBuildConfigs(buildConfigs);
             logger.fine("handled BuildConfigs resources");
             if (buildConfigWatches.get(namespace) == null) {
-              buildConfigWatches.put(namespace,getOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this));
+              buildConfigWatches.put(namespace,getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this));
             }
           } catch (Exception e) {
             logger.log(SEVERE, "Failed to load BuildConfigs: " + e, e);

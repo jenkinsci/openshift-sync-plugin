@@ -31,7 +31,7 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_DATA_
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_TYPE_BASICAUTH;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_TYPE_OPAQUE;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_SECRETS_TYPE_SSH;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
 import static org.apache.commons.lang.StringUtils.isNotBlank;
 
 public class CredentialsUtils {
@@ -44,7 +44,7 @@ public class CredentialsUtils {
       buildConfig.getSpec().getSource() != null &&
       buildConfig.getSpec().getSource().getSourceSecret() != null &&
       !buildConfig.getSpec().getSource().getSourceSecret().getName().isEmpty()) {
-      Secret sourceSecret = getOpenShiftClient().secrets().inNamespace(buildConfig.getMetadata().getNamespace()).withName(buildConfig.getSpec().getSource().getSourceSecret().getName()).get();
+      Secret sourceSecret = getAuthenticatedOpenShiftClient().secrets().inNamespace(buildConfig.getMetadata().getNamespace()).withName(buildConfig.getSpec().getSource().getSourceSecret().getName()).get();
       if (sourceSecret != null) {
         Credentials creds = secretToCredentials(sourceSecret);
         id = secretName(buildConfig.getMetadata().getNamespace(), buildConfig.getSpec().getSource().getSourceSecret().getName());
@@ -63,6 +63,24 @@ public class CredentialsUtils {
       }
     }
     return id;
+  }
+
+  public static String getCurrentToken() {
+    OpenShiftToken token = CredentialsMatchers.firstOrNull(
+            CredentialsProvider.lookupCredentials(
+                    OpenShiftToken.class,
+                    Jenkins.getActiveInstance(),
+                    ACL.SYSTEM,
+                    Collections.<DomainRequirement> emptyList()
+            ),
+            CredentialsMatchers.withId(GlobalPluginConfiguration.get().getCredentialsId())
+            );
+
+    if( token != null ) {
+      return token.getToken();
+    }
+
+    return "";
   }
 
   private static Credentials lookupCredentials(String id) {

@@ -15,10 +15,15 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsUnavailableException;
+import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import hudson.model.ItemGroup;
+import hudson.security.ACL;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.ReplicationController;
@@ -38,6 +43,7 @@ import io.fabric8.openshift.api.model.RouteSpec;
 import io.fabric8.openshift.client.DefaultOpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftClient;
 import io.fabric8.openshift.client.OpenShiftConfigBuilder;
+import jenkins.model.GlobalConfiguration;
 import org.apache.commons.lang.StringUtils;
 import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormatter;
@@ -47,6 +53,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -81,6 +88,18 @@ public class OpenShiftUtils {
   }
 
   public synchronized static OpenShiftClient getOpenShiftClient() {
+    return openShiftClient;
+  }
+
+  // Get the current OpenShiftClient and configure to use the current Oauth token.
+  public synchronized static OpenShiftClient getAuthenticatedOpenShiftClient() {
+    if(openShiftClient != null){
+      String token = CredentialsUtils.getCurrentToken();
+      if(token.length() > 0) {
+        openShiftClient.getConfiguration().setOauthToken(token);
+      }
+    }
+
     return openShiftClient;
   }
 
@@ -268,7 +287,7 @@ public class OpenShiftUtils {
 
   public static void updateOpenShiftBuildPhase(Build build, String phase) {
     logger.log(FINE, "setting build to {0} in namespace {1}/{2}", new Object[]{phase, build.getMetadata().getNamespace(), build.getMetadata().getName()});
-    getOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
+    getAuthenticatedOpenShiftClient().builds().inNamespace(build.getMetadata().getNamespace()).withName(build.getMetadata().getName())
       .edit()
       .editStatus().withPhase(phase).endStatus()
       .done();
