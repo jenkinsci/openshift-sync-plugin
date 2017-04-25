@@ -197,5 +197,4 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
       }
     }
   }
-
 }
