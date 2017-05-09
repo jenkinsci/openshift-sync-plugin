@@ -27,6 +27,7 @@ import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.BuildStrategy;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
+
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.URIish;
@@ -39,6 +40,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
@@ -135,12 +137,17 @@ public class BuildConfigToJobMapper {
       CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
       String scriptPath = cpsScmFlowDefinition.getScriptPath();
       if (scriptPath != null && scriptPath.trim().length() > 0) {
+        boolean rc = false;
         String bcContextDir = buildConfig.getSpec().getSource().getContextDir();
         if (StringUtils.isNotBlank(bcContextDir) && scriptPath.startsWith(bcContextDir)) {
           scriptPath = scriptPath.replaceFirst("^" + bcContextDir + "/?", "");
         }
 
-        jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
+        if (!scriptPath.equals(jenkinsPipelineStrategy.getJenkinsfilePath())) {
+          LOGGER.log(Level.FINE, "updating bc " + namespaceName + " jenkinsfile path to " + scriptPath + " from ");
+          rc = true;  
+          jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
+        }
 
         SCM scm = cpsScmFlowDefinition.getScm();
         if (scm instanceof GitSCM) {
@@ -165,12 +172,14 @@ public class BuildConfigToJobMapper {
                     ref = branch;
                   }
                 }
+                LOGGER.log(Level.FINE, "updating bc " + namespaceName + " gitURL to " + gitUrl + " and ref to " + ref);
                 OpenShiftUtils.updateGitSourceUrl(buildConfig, gitUrl, ref);
+                rc = true;
               }
             }
           }
         }
-        return true;
+        return rc;
       }
       return false;
     }
@@ -178,10 +187,12 @@ public class BuildConfigToJobMapper {
     if (definition instanceof CpsFlowDefinition) {
       CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
       String jenkinsfile = cpsFlowDefinition.getScript();
-      if (jenkinsfile != null && jenkinsfile.trim().length() > 0) {
+      if (jenkinsfile != null && jenkinsfile.trim().length() > 0 && !jenkinsfile.equals(jenkinsPipelineStrategy.getJenkinsfile())) {
+          LOGGER.log(Level.FINE, "updating bc " + namespaceName + " jenkinsfile to " + jenkinsfile + " where old jenkinsfile was " + jenkinsPipelineStrategy.getJenkinsfile());
         jenkinsPipelineStrategy.setJenkinsfile(jenkinsfile);
         return true;
       }
+      
       return false;
     }
 
