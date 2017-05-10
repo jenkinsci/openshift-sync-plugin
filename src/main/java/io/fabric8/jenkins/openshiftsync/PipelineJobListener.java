@@ -125,18 +125,20 @@ public class PipelineJobListener extends ItemListener {
     if (buildConfigProjectProperty == null || buildConfigProjectProperty.getNamespace() == null || buildConfigProjectProperty.getName() == null || buildConfigProjectProperty.getUid() == null) {
       return;
     }
-
+    
     BuildConfig jobBuildConfig = buildConfigProjectProperty.getBuildConfig();
     if (jobBuildConfig == null) {
       logger.log(Level.WARNING, "Failed to find BuildConfig in namespace: " + buildConfigProjectProperty.getNamespace() + " for name: " + buildConfigProjectProperty.getName());
       return;
     }
-    updateBuildConfigFromJob(job, jobBuildConfig);
+    boolean bcUpdated = updateBuildConfigFromJob(job, jobBuildConfig);
 
-    try {
-      getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).cascading(false).replace(jobBuildConfig);
-    } catch (Exception e) {
-      logger.log(Level.WARNING, "Failed to update BuildConfig: " + NamespaceName.create(jobBuildConfig) + ". " + e, e);
+    if (bcUpdated) {
+        try {
+          getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(jobBuildConfig.getMetadata().getNamespace()).withName(jobBuildConfig.getMetadata().getName()).cascading(false).replace(jobBuildConfig);
+        } catch (Exception e) {
+          logger.log(Level.WARNING, "Failed to update BuildConfig: " + NamespaceName.create(jobBuildConfig) + ". " + e, e);
+        }
     }
   }
 }
