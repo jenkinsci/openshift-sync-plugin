@@ -55,6 +55,10 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
   private transient BuildConfigWatcher buildConfigWatcher;
 
+  private transient ConfigMapWatcher configMapWatcher;
+
+  private transient ImageStreamWatcher imageStreamWatcher;
+
   @DataBoundConstructor
   public GlobalPluginConfiguration(boolean enable, String server, String namespace, String credentialsId) {
     this.enabled = enable;
@@ -182,6 +186,10 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
           buildConfigWatcher.start();
           buildWatcher = new BuildWatcher(namespaces);
           buildWatcher.start();
+          configMapWatcher = new ConfigMapWatcher(namespaces);
+          configMapWatcher.start();
+          imageStreamWatcher = new ImageStreamWatcher(namespaces);
+          imageStreamWatcher.start();
         }
       };
       // lets give jenkins a while to get started ;)
