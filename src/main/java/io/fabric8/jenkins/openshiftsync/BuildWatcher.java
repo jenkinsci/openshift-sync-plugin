@@ -72,6 +72,10 @@ public class BuildWatcher implements Watcher<Build> {
     Runnable task = new SafeTimerTask() {
       @Override
       public void doRun() {
+        if (!CredentialsUtils.hasCredentials()) {
+          logger.fine("No Openshift Token credential defined.");
+          return;
+        }
         for(String namespace:namespaces) {
           try {
             logger.fine("listing Build resources");
