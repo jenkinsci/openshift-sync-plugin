@@ -18,7 +18,7 @@ package io.fabric8.jenkins.openshiftsync;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import hudson.Extension;
 import hudson.Util;
-import hudson.model.Computer;
+import hudson.init.InitMilestone;
 import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
 import hudson.util.ListBoxModel;
@@ -161,19 +161,16 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
         protected void doRun() throws Exception {
           logger.info("Waiting for Jenkins to be started");
           while (true) {
-            Computer[] computers = Jenkins.getActiveInstance().getComputers();
-            boolean ready = false;
-            for (Computer c : computers) {
-              // Jenkins.isAcceptingTasks() results in hudson.model.Node.isAcceptingTasks() getting called, and that always returns true;
-              // the Computer.isAcceptingTasks actually introspects various Jenkins data structures to determine readiness
-              if (c.isAcceptingTasks()) {
-                ready = true;
-                break;
-              }
-            }
-            if (ready) {
+            final Jenkins instance = Jenkins.getActiveInstance();
+            // We can look at Jenkins Init Level to see if we are ready
+            // to start. If we do not wait, we risk the chance of a deadlock.
+            //
+            InitMilestone initLevel = instance.getInitLevel();
+            logger.fine("Jenkins init level: " + initLevel.toString());
+            if (initLevel == InitMilestone.COMPLETED) {
               break;
             }
+            logger.fine("Jenkins not ready...");
             try {
               Thread.sleep(500);
             } catch (InterruptedException e) {
