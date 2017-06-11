@@ -242,12 +242,10 @@ public class JenkinsUtils {
 
   public static List<Action> setJobRunParamsFromEnvAndUIParams(WorkflowJob job, JenkinsPipelineBuildStrategy strat, List<Action> buildActions, ParametersAction params) {
       List<EnvVar> envs = strat.getEnv();
-      List<String> envKeys = new ArrayList<String>();
       List<ParameterValue> envVarList = new ArrayList<ParameterValue>();
       if (envs.size() > 0) {
           // build list of env var keys for compare with existing job params
           for (EnvVar env : envs) {
-              envKeys.add(env.getName());
               envVarList.add(new StringParameterValue(env.getName(),env.getValue()));
           }
       }
@@ -576,7 +574,10 @@ public class JenkinsUtils {
           // now set new list back into cloud
           kubeCloud.setTemplates(list);
           try {
-              Jenkins.getInstance().save();
+              // pedantic mvn:findbugs
+              Jenkins jenkins = Jenkins.getInstance();
+              if (jenkins != null)
+                  jenkins.save();
           } catch (IOException e) {
               LOGGER.log(Level.SEVERE, "removePodTemplate", e);
           }
@@ -605,7 +606,10 @@ public class JenkinsUtils {
           LOGGER.info("Adding PodTemplate: " + podTemplate.getName());
           kubeCloud.addTemplate(podTemplate);
           try {
-            Jenkins.getInstance().save();
+              // pedantic mvn:findbugs
+              Jenkins jenkins = Jenkins.getInstance();
+              if (jenkins != null)
+                  jenkins.save();
           } catch (IOException e) {
               LOGGER.log(Level.SEVERE, "addPodTemplate", e);
           }
@@ -613,7 +617,11 @@ public class JenkinsUtils {
       }
     
     public static KubernetesCloud getKubernetesCloud() {
-        Cloud openShiftCloud = Jenkins.getInstance().getCloud("openshift");
+        // pedantic mvn:findbugs
+        Jenkins jenkins = Jenkins.getInstance();
+        if (jenkins == null)
+            return null;
+        Cloud openShiftCloud = jenkins.getCloud("openshift");
         if(openShiftCloud instanceof KubernetesCloud) {
           return (KubernetesCloud) openShiftCloud;
         }

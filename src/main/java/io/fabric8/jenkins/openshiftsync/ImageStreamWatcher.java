@@ -29,6 +29,7 @@ import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -102,25 +103,25 @@ public class ImageStreamWatcher extends BaseWatcher implements Watcher<ImageStre
                         trackedImageStreams.put(entry.getKey(), entry.getValue());
                     }
                     // go back and remove tracked items that no longer are marked slaves
-                    Set<String> keyset = trackedImageStreams.keySet();
-                    for (String key : keyset) {
+                    Set<Entry<String, PodTemplate>> entryset = trackedImageStreams.entrySet();
+                    for (Entry<String, PodTemplate> entry : entryset) {
                         // if the entry is not for the IS from the watch event, skip
-                        if (!key.startsWith(isuuid))
+                        if (!entry.getKey().startsWith(isuuid))
                             continue;
-                        if (!slavesFromIS.containsKey(key)) {
-                            JenkinsUtils.removePodTemplate(trackedImageStreams.get(key));
-                            keyset.remove(key); // removes from trackedImageStreams as well
+                        if (!slavesFromIS.containsKey(entry.getKey())) {
+                            JenkinsUtils.removePodTemplate(entry.getValue());
+                            entryset.remove(entry); // removes from trackedImageStreams as well
                         }
                     }
                     break;
 
                 case DELETED:
-                    keyset = trackedImageStreams.keySet();
-                    for (String key : keyset) {
+                    entryset = trackedImageStreams.entrySet();
+                    for (Entry<String, PodTemplate> entry : entryset) {
                         // if the entry is for the IS from the watch event, delete
-                        if (key.startsWith(isuuid)) {
-                            JenkinsUtils.removePodTemplate(trackedImageStreams.get(key));
-                            keyset.remove(key); // removes from trackedImageStreams as well
+                        if (entry.getKey().startsWith(isuuid)) {
+                            JenkinsUtils.removePodTemplate(entry.getValue());
+                            entryset.remove(entry); // removes from trackedImageStreams as well
                         }
                     }
                     break;

@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -139,6 +140,9 @@ public class ConfigMapWatcher extends BaseWatcher implements Watcher<ConfigMap> 
                         trackedConfigMaps.remove(configMap.getMetadata().getUid());
                     }
                     break;
+                 // pedantic mvn:findbugs complaint   
+                 default:
+                     break;
 
             }
         } catch (Exception e) {
@@ -180,20 +184,20 @@ public class ConfigMapWatcher extends BaseWatcher implements Watcher<ConfigMap> 
 
         XStream2 xStream2 = new XStream2();
 
-        for(String key : data.keySet()) {
+        for(Entry<String, String> entry : data.entrySet()) {
             Object podTemplate;
             try {
-                podTemplate = xStream2.fromXML(data.get(key));
+                podTemplate = xStream2.fromXML(entry.getValue());
 
                 if( podTemplate instanceof PodTemplate ) {
                     results.add((PodTemplate) podTemplate);
                 } else {
-                    logger.warning("Content of key '" + key + "' in ConfigMap '" + configMap.getMetadata().getName() + "' is not a PodTemplate");
+                    logger.warning("Content of key '" + entry.getKey() + "' in ConfigMap '" + configMap.getMetadata().getName() + "' is not a PodTemplate");
                 }
             } catch (XStreamException xse) {
-                logger.warning(new IOException("Unable to read key '" + key + "' from ConfigMap '" + configMap.getMetadata().getName() + "'", xse).getMessage());
+                logger.warning(new IOException("Unable to read key '" + entry.getKey() + "' from ConfigMap '" + configMap.getMetadata().getName() + "'", xse).getMessage());
             } catch (Error e) {
-                logger.warning(new IOException("Unable to read key '" + key + "' from ConfigMap '" + configMap.getMetadata().getName() + "'", e).getMessage());
+                logger.warning(new IOException("Unable to read key '" + entry.getKey() + "' from ConfigMap '" + configMap.getMetadata().getName() + "'", e).getMessage());
             }
         }
 
