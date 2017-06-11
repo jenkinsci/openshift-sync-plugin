@@ -32,12 +32,17 @@ import hudson.model.Queue;
 import hudson.model.RunParameterDefinition;
 import hudson.model.StringParameterDefinition;
 import hudson.model.StringParameterValue;
+import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
 import hudson.plugins.git.RevisionParameterAction;
 import hudson.security.ACL;
+import hudson.security.SecurityRealm;
+import hudson.slaves.Cloud;
 import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.client.Config;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
 import io.fabric8.openshift.api.model.BuildConfig;
@@ -45,22 +50,34 @@ import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.GitSourceRevision;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
 import io.fabric8.openshift.api.model.SourceRevision;
+import io.fabric8.openshift.api.model.User;
+import io.fabric8.openshift.client.DefaultOpenShiftClient;
+import io.fabric8.openshift.client.OpenShiftClient;
+import io.fabric8.openshift.client.OpenShiftConfigBuilder;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
 
 import org.apache.commons.lang.StringUtils;
+import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
+import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
+import org.csanchez.jenkins.plugins.kubernetes.PodVolumes;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import com.cloudbees.plugins.credentials.CredentialsParameterDefinition;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -540,4 +557,93 @@ public class JenkinsUtils {
       }
     }
   }
+
+    public static void removePodTemplate(PodTemplate podTemplate) {
+        KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
+        if(kubeCloud != null){
+          LOGGER.info("Removing PodTemplate: " + podTemplate.getName());
+          //NOTE - PodTemplate does not currently override hashCode, equals, so 
+          // the KubernetsCloud.removeTemplate currently is broken; 
+          //kubeCloud.removeTemplate(podTemplate);
+          List<PodTemplate> list = kubeCloud.getTemplates();
+          Iterator<PodTemplate> iter = list.iterator();
+          while (iter.hasNext()) {
+              PodTemplate pt = iter.next();
+              if (pt.getName().equals(podTemplate.getName())) {
+                  iter.remove();
+              }
+          }
+          // now set new list back into cloud
+          kubeCloud.setTemplates(list);
+          try {
+              Jenkins.getInstance().save();
+          } catch (IOException e) {
+              LOGGER.log(Level.SEVERE, "removePodTemplate", e);
+          }
+          
+          if (LOGGER.isLoggable(Level.FINE)) {
+              LOGGER.fine("PodTemplates now:");
+              for (PodTemplate pt : kubeCloud.getTemplates()) {
+                  LOGGER.fine(pt.getName());
+              }
+          }
+        }
+      }
+    
+    public static List<PodTemplate> getPodTemplates() {
+        KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
+        if(kubeCloud != null){
+          return kubeCloud.getTemplates();
+        } else {
+          return null;
+        }
+      }
+    
+    public static void addPodTemplate(PodTemplate podTemplate) {
+        KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
+        if(kubeCloud != null){
+          LOGGER.info("Adding PodTemplate: " + podTemplate.getName());
+          kubeCloud.addTemplate(podTemplate);
+          try {
+            Jenkins.getInstance().save();
+          } catch (IOException e) {
+              LOGGER.log(Level.SEVERE, "addPodTemplate", e);
+          }
+        }
+      }
+    
+    public static KubernetesCloud getKubernetesCloud() {
+        Cloud openShiftCloud = Jenkins.getInstance().getCloud("openshift");
+        if(openShiftCloud instanceof KubernetesCloud) {
+          return (KubernetesCloud) openShiftCloud;
+        }
+    
+        return null;
+      }
+    
+    public static PodTemplate podTemplateInit(String name, String image, String label) {
+        PodTemplate podTemplate = new PodTemplate(image, new ArrayList<PodVolumes.PodVolume>());
+        // with the above ctor guarnateed to have 1 container
+        // also still force our image as the special case "jnlp" container for the KubernetesSlave;
+        // attempts to use the "jenkinsci/jnlp-slave:alpine" image for a separate jnlp container
+        // have proved unsuccessful (could not access gihub.com for example)
+        podTemplate.getContainers().get(0).setName("jnlp");
+        //podTemplate.setInstanceCap(Integer.MAX_VALUE);
+        podTemplate.setName(name);
+        podTemplate.setLabel(label);
+        podTemplate.setAlwaysPullImage(false);
+        podTemplate.setCommand("");
+        podTemplate.setArgs("${computer.jnlpmac} ${computer.name}");
+        podTemplate.setRemoteFs("/tmp");
+        String podName = System.getenv().get("HOSTNAME");
+        if (podName != null) {
+            Pod pod = getAuthenticatedOpenShiftClient().pods().withName(podName).get();
+            if (pod != null) {
+                podTemplate.setServiceAccount(pod.getSpec().getServiceAccountName());
+            }
+        }
+        
+        return podTemplate;
+    }
+    
 }
