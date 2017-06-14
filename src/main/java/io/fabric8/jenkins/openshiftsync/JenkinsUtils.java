@@ -594,10 +594,27 @@ public class JenkinsUtils {
     public static List<PodTemplate> getPodTemplates() {
         KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
         if(kubeCloud != null){
-          return kubeCloud.getTemplates();
+          // create copy of list for more flexiblity in loops
+          ArrayList<PodTemplate> list = new ArrayList<PodTemplate>();
+          list.addAll(kubeCloud.getTemplates());
+          return list;
         } else {
           return null;
         }
+      }
+    
+    public static boolean hasPodTemplate(String name) {
+        if (name == null)
+            return false;
+        KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
+        if(kubeCloud != null){
+          List<PodTemplate> list = kubeCloud.getTemplates();
+          for (PodTemplate pod : list) {
+              if (name.equals(pod.getName()))
+                  return true;
+          }
+        }
+        return false;
       }
     
     public static void addPodTemplate(PodTemplate podTemplate) {
