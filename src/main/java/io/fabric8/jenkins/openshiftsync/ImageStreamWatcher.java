@@ -169,10 +169,11 @@ public class ImageStreamWatcher extends BaseWatcher implements Watcher<ImageStre
 
     private List<PodTemplate> podTemplates(ImageStream imageStream) {
         List<PodTemplate> results = new ArrayList<PodTemplate>();
+        //for IS, since we can check labels, check there
         if (hasSlaveLabelOrAnnotation(imageStream.getMetadata().getLabels())) {
             results.add(podTemplateFromData(imageStream.getMetadata().getName(),
                     imageStream.getStatus().getDockerImageRepository(),
-                    imageStream.getMetadata().getLabels()));
+                    imageStream.getMetadata().getAnnotations())); // for slave-label, still check annotations
         }
         
         String namespace = imageStream.getMetadata().getNamespace();
@@ -186,8 +187,9 @@ public class ImageStreamWatcher extends BaseWatcher implements Watcher<ImageStre
             } catch (Throwable t) {
                 logger.log(Level.FINE, "podTemplates", t);
             }
+            // for IST, can't set labels, so check annotations
             if (ist != null && hasSlaveLabelOrAnnotation(ist.getMetadata().getAnnotations())) {
-                results.add(this.podTemplateFromData(ist.getMetadata().getName(), 
+                results.add(this.podTemplateFromData(ist.getMetadata().getName(),
                         ist.getImage().getDockerImageReference(), 
                         ist.getMetadata().getAnnotations()));
             }
