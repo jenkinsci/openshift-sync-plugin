@@ -66,6 +66,7 @@ public class ConfigMapWatcher extends BaseWatcher implements Watcher<ConfigMap> 
                         onInitialConfigMaps(configMaps);
                         logger.fine("handled ConfigMap resources");
                         if (watches.get(namespace) == null) {
+                            logger.info("creating ConfigMap watch for namespace " + namespace + " and resource version " + configMaps.getMetadata().getResourceVersion());
                             watches.put(namespace,getAuthenticatedOpenShiftClient().configMaps().inNamespace(namespace).withResourceVersion(configMaps.getMetadata().getResourceVersion()).watch(ConfigMapWatcher.this));
                         }
                     } catch (Exception e) {

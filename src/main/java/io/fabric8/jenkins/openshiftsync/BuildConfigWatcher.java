@@ -83,6 +83,7 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
                 onInitialBuildConfigs(buildConfigs);
                 logger.fine("handled BuildConfigs resources");
                 if (watches.get(namespace) == null) {
+                  logger.info("creating BuildConfig watch for namespace " + namespace + " and resource version " + buildConfigs.getMetadata().getResourceVersion());
                   watches.put(namespace,getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this));
                 }
               } catch (Exception e) {
