@@ -75,6 +75,7 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
                 onInitialBuildConfigs(buildConfigs);
                 logger.fine("handled BuildConfigs resources");
                 if (watches.get(namespace) == null) {
+                  logger.info("creating BuildConfig watch for namespace " + namespace + " and resource version " + buildConfigs.getMetadata().getResourceVersion());
                   watches.put(namespace,getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace).withResourceVersion(buildConfigs.getMetadata().getResourceVersion()).watch(BuildConfigWatcher.this));
                 }
               } catch (Exception e) {
@@ -137,83 +138,86 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
 
   private void upsertJob(final BuildConfig buildConfig) throws Exception {
     if (isJenkinsBuildConfig(buildConfig)) {
-      ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
-        @Override
-        public Void call() throws Exception {
-          String jobName = jenkinsJobName(buildConfig);
-          WorkflowJob job = getJobFromBuildConfig(buildConfig);
-          boolean newJob = job == null;
-          if (newJob) {
-            job = new WorkflowJob(Jenkins.getActiveInstance(), jobName);
-          }
-          BulkChange bk = new BulkChange(job);
+      // sync on intern of name should guarantee sync on same actual obj
+      synchronized(buildConfig.getMetadata().getUid().intern()) {
+          ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
+              @Override
+              public Void call() throws Exception {
+                String jobName = jenkinsJobName(buildConfig);
+                WorkflowJob job = getJobFromBuildConfig(buildConfig);
+                boolean newJob = job == null;
+                if (newJob) {
+                  job = new WorkflowJob(Jenkins.getActiveInstance(), jobName);
+                }
+                BulkChange bk = new BulkChange(job);
 
-          job.setDisplayName(jenkinsJobDisplayName(buildConfig));
+                job.setDisplayName(jenkinsJobDisplayName(buildConfig));
 
-          FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig);
-          if (flowFromBuildConfig == null) {
-            return null;
-          }
+                FlowDefinition flowFromBuildConfig = mapBuildConfigToFlow(buildConfig);
+                if (flowFromBuildConfig == null) {
+                  return null;
+                }
 
-          job.setDefinition(flowFromBuildConfig);
+                job.setDefinition(flowFromBuildConfig);
 
-          String existingBuildRunPolicy = null;
+                String existingBuildRunPolicy = null;
 
-          BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
-          if (buildConfigProjectProperty != null) {
-            existingBuildRunPolicy = buildConfigProjectProperty.getBuildRunPolicy();
-            long updatedBCResourceVersion = parseResourceVersion(buildConfig);
-            long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
-            BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
-            if (updatedBCResourceVersion <= oldBCResourceVersion &&
-              newProperty.getUid().equals(buildConfigProjectProperty.getUid()) &&
-              newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace()) &&
-              newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
-              newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
-              ) {
-              return null;
-            }
-            buildConfigProjectProperty.setUid(newProperty.getUid());
-            buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
-            buildConfigProjectProperty.setName(newProperty.getName());
-            buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
-            buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
-          } else {
-            job.addProperty(
-              new BuildConfigProjectProperty(buildConfig)
-            );
-          }
+                BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
+                if (buildConfigProjectProperty != null) {
+                  existingBuildRunPolicy = buildConfigProjectProperty.getBuildRunPolicy();
+                  long updatedBCResourceVersion = parseResourceVersion(buildConfig);
+                  long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
+                  BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
+                  if (updatedBCResourceVersion <= oldBCResourceVersion &&
+                    newProperty.getUid().equals(buildConfigProjectProperty.getUid()) &&
+                    newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace()) &&
+                    newProperty.getName().equals(buildConfigProjectProperty.getName()) &&
+                    newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())
+                    ) {
+                    return null;
+                  }
+                  buildConfigProjectProperty.setUid(newProperty.getUid());
+                  buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
+                  buildConfigProjectProperty.setName(newProperty.getName());
+                  buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
+                  buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
+                } else {
+                  job.addProperty(
+                    new BuildConfigProjectProperty(buildConfig)
+                  );
+                }
 
-          // (re)populate job param list with any envs from the build config
-          JenkinsUtils.addJobParamForBuildEnvs(job, buildConfig.getSpec().getStrategy().getJenkinsPipelineStrategy(), true);
-          
-          job.setConcurrentBuild(
-            !(buildConfig.getSpec().getRunPolicy().equals(SERIAL) ||
-              buildConfig.getSpec().getRunPolicy().equals(SERIAL_LATEST_ONLY))
-          );
+                // (re)populate job param list with any envs from the build config
+                JenkinsUtils.addJobParamForBuildEnvs(job, buildConfig.getSpec().getStrategy().getJenkinsPipelineStrategy(), true);
+                
+                job.setConcurrentBuild(
+                  !(buildConfig.getSpec().getRunPolicy().equals(SERIAL) ||
+                    buildConfig.getSpec().getRunPolicy().equals(SERIAL_LATEST_ONLY))
+                );
 
-          InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
+                InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
 
-          if (newJob) {
-              try {
-                  Jenkins.getActiveInstance().createProjectFromXML(
-                          jobName,
-                          jobStream
-                        ).save();
-                        logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
-              } catch (IllegalArgumentException e) {
-                  // see https://github.com/openshift/jenkins-sync-plugin/issues/117, jenkins might reload existing jobs on startup between the
-                  // newJob check above and when we make the createProjectFromXML call; if so, retry as an update
-                  updateJob(job, jobStream, jobName, buildConfig, existingBuildRunPolicy, buildConfigProjectProperty);
+                if (newJob) {
+                    try {
+                        Jenkins.getActiveInstance().createProjectFromXML(
+                                jobName,
+                                jobStream
+                              ).save();
+                              logger.info("Created job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
+                    } catch (IllegalArgumentException e) {
+                        // see https://github.com/openshift/jenkins-sync-plugin/issues/117, jenkins might reload existing jobs on startup between the
+                        // newJob check above and when we make the createProjectFromXML call; if so, retry as an update
+                        updateJob(job, jobStream, jobName, buildConfig, existingBuildRunPolicy, buildConfigProjectProperty);
+                    }
+                } else {
+                    updateJob(job, jobStream, jobName, buildConfig, existingBuildRunPolicy, buildConfigProjectProperty);
+                }
+                bk.commit();
+                putJobWithBuildConfig(Jenkins.getActiveInstance().getItemByFullName(job.getFullName(), WorkflowJob.class), buildConfig);
+                return null;
               }
-          } else {
-              updateJob(job, jobStream, jobName, buildConfig, existingBuildRunPolicy, buildConfigProjectProperty);
-          }
-          bk.commit();
-          putJobWithBuildConfig(Jenkins.getActiveInstance().getItemByFullName(job.getFullName(), WorkflowJob.class), buildConfig);
-          return null;
-        }
-      });
+            });
+      }
     }
   }
 
@@ -232,18 +236,22 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
   private void innerDeleteEventToJenkinsJob(final BuildConfig buildConfig) throws Exception {
       final Job job = getJobFromBuildConfig(buildConfig);
       if (job != null) {
-        ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
-          @Override
-          public Void call() throws Exception {
-            try {
-              job.delete();
-            } finally {
-              removeJobWithBuildConfig(buildConfig);
-              Jenkins.getActiveInstance().rebuildDependencyGraphAsync();
-            }
-            return null;
-          }
-        });
+      // employ intern of the BC UID to facilitate sync'ing on the same actual object
+      synchronized(buildConfig.getMetadata().getUid().intern()) {
+          ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
+              @Override
+              public Void call() throws Exception {
+                try {
+                  job.delete();
+                } finally {
+                  removeJobWithBuildConfig(buildConfig);
+                  Jenkins.getActiveInstance().rebuildDependencyGraphAsync();
+                }
+                return null;
+              }
+            });
+      }
+        
       }
       
   }
