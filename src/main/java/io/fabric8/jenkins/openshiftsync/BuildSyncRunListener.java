@@ -19,6 +19,7 @@ import com.cloudbees.workflow.rest.external.AtomFlowNodeExt;
 import com.cloudbees.workflow.rest.external.FlowNodeExt;
 import com.cloudbees.workflow.rest.external.RunExt;
 import com.cloudbees.workflow.rest.external.StageNodeExt;
+import com.cloudbees.workflow.rest.external.StatusExt;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -69,7 +70,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   private static final Logger logger = Logger.getLogger(BuildSyncRunListener.class.getName());
 
   private long pollPeriodMs = 1000;
-  private String namespace;
+  private static final long maxDelay = 30000;
 
   private transient Set<Run> runsToPoll = new CopyOnWriteArraySet<>();
 
@@ -197,6 +198,41 @@ public class BuildSyncRunListener extends RunListener<Run> {
       throw e;
     }
   }
+  
+  private boolean shouldUpdateOpenShiftBuild(BuildCause cause, int latestStageNum, int latestNumFlowNodes, StatusExt status) {
+      long currTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
+      logger.fine(String.format("shouldUpdateOpenShiftBuild curr time %s last update %s curr stage num &s last stage num %s" +
+              "curr flow num %s last flow num %s status %s", 
+              String.valueOf(currTime),
+              String.valueOf(cause.getLastUpdateToOpenshift()),
+              String.valueOf(latestStageNum),
+              String.valueOf(cause.getNumStages()),
+              String.valueOf(latestNumFlowNodes),
+              String.valueOf(cause.getNumFlowNodes()),
+              status.toString()));
+      
+      // if we have not updated in maxDelay time, update
+      if (currTime > (cause.getLastUpdateToOpenshift() + maxDelay)) {
+          return true;
+      }
+      
+      // if the num of stages has changed, update
+      if (cause.getNumStages() != latestStageNum) {
+          return true;
+      }
+      
+      // if the num of flow nodes has changed, update
+      if (cause.getNumFlowNodes() != latestNumFlowNodes) {
+          return true;
+      }
+      
+      // if the run is in some sort of terminal state, update
+      if (status != StatusExt.IN_PROGRESS) {
+          return true;
+      }
+      
+      return false;
+  }
 
   private void upsertBuild(Run run, RunExt wfRunExt) {
     if (run == null) {
@@ -254,6 +290,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
     if (!wfRunExt.get_links().self.href.matches("^https?://.*$")) {
       wfRunExt.get_links().self.setHref(joinPaths(rootUrl, wfRunExt.get_links().self.href));
     }
+    int newNumStages = wfRunExt.getStages().size();
+    int newNumFlowNodes = 0;
     for (StageNodeExt stage : wfRunExt.getStages()) {
       FlowNodeExt.FlowNodeLinks links = stage.get_links();
       if (!links.self.href.matches("^https?://.*$")) {
@@ -262,6 +300,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       if (links.getLog() != null && !links.getLog().href.matches("^https?://.*$")) {
         links.getLog().setHref(joinPaths(rootUrl, links.getLog().href));
       }
+      newNumFlowNodes = newNumFlowNodes + stage.getStageFlowNodes().size();
       for (AtomFlowNodeExt node : stage.getStageFlowNodes()) {
         FlowNodeExt.FlowNodeLinks nodeLinks = node.get_links();
         if (!nodeLinks.self.href.matches("^https?://.*$")) {
@@ -272,7 +311,12 @@ public class BuildSyncRunListener extends RunListener<Run> {
         }
       }
     }
-
+    
+    boolean needToUpdate = this.shouldUpdateOpenShiftBuild(cause, newNumStages, newNumFlowNodes, wfRunExt.getStatus());
+    if (!needToUpdate) {
+        return;
+    }
+    
     String json;
     try {
       json = new ObjectMapper().writeValueAsString(wfRunExt);
@@ -280,7 +324,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
       logger.log(SEVERE, "Failed to serialize workflow run. " + e, e);
       return;
     }
-
+    
     String phase = runToBuildPhase(run);
 
     long started = getStartTime(run);
@@ -318,6 +362,10 @@ public class BuildSyncRunListener extends RunListener<Run> {
         throw e;
       }
     }
+    
+    cause.setNumFlowNodes(newNumFlowNodes);
+    cause.setNumStages(newNumStages);
+    cause.setLastUpdateToOpenshift(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()));
   }
 
   private long getStartTime(Run run) {
