@@ -54,6 +54,7 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import jenkins.model.Jenkins;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.NEW;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.RUNNING;
@@ -80,7 +81,7 @@ public class OpenShiftUtils {
       configBuilder.withMasterUrl(serverUrl);
     }
     Config config = configBuilder.build();
-    config.setUserAgent("openshift-sync-plugin/fabric8-" +Version.clientVersion());
+    config.setUserAgent("openshift-sync-plugin-" + Jenkins.getInstance().getPluginManager().getPlugin("openshift-sync").getVersion() + "/fabric8-" +Version.clientVersion());
     openShiftClient = new DefaultOpenShiftClient(config);
   }
 
