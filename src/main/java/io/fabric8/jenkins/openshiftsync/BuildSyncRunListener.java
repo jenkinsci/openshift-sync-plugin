@@ -201,7 +201,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
   
   private boolean shouldUpdateOpenShiftBuild(BuildCause cause, int latestStageNum, int latestNumFlowNodes, StatusExt status) {
       long currTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
-      logger.fine(String.format("shouldUpdateOpenShiftBuild curr time %s last update %s curr stage num &s last stage num %s" +
+      logger.fine(String.format("shouldUpdateOpenShiftBuild curr time %s last update %s curr stage num %s last stage num %s" +
               "curr flow num %s last flow num %s status %s", 
               String.valueOf(currTime),
               String.valueOf(cause.getLastUpdateToOpenshift()),
