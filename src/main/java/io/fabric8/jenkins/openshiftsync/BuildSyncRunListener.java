@@ -42,6 +42,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import javax.annotation.Nonnull;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -250,14 +251,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
     String logsConsoleUrl = joinPaths(buildUrl, "/console");
     String logsBlueOceanUrl = null;
     try {
-        // while we support Jenkins v1 (it is being deprecated in openshift 3.6), need to get at
-        // blueocean plugins via reflection;
-        // On those plugins specifically, there are utility functions in the blueocean-dashboard plugin which construct 
-        // this entire URI; however, attempting to pull that in as a maven dependency was untenable from an injected test perspective;
-        // the blueocean-rest-impl plugin was possible though, and the organization piece was in fact the only one
-        // that was missing for use to construct the entire URL manually.
-        // But with reflection, we can leverage the blueocean-dashboard logic.  Doing so here, but have left the 
-        // blueocean-rest-impl plugin usage as a comment for future reference if we move off of reflection.
+        // there are utility functions in the blueocean-dashboard plugin which construct 
+        // the entire blueocean URI; however, attempting to pull that in as a maven dependency was untenable from an injected test perspective;
+        // so we are leveraging reflection;
         Jenkins jenkins = Jenkins.getInstance();
         // NOTE, the excessive null checking is to keep `mvn findbugs:gui` quiet
         if (jenkins != null) {
@@ -265,23 +261,21 @@ public class BuildSyncRunListener extends RunListener<Run> {
             if (pluginMgr != null) {
                 ClassLoader cl = pluginMgr.uberClassLoader;
                 if (cl != null) {
-                    Class weburlbldr = cl.loadClass("io.jenkins.blueocean.BlueOceanWebURLBuilder");
-                    Method toBlueOceanURLMethod = weburlbldr.getMethod("toBlueOceanURL", hudson.model.ModelObject.class);
-                    Object blueOceanURI = toBlueOceanURLMethod.invoke(null, run);
-                    logsBlueOceanUrl = joinPaths(rootUrl, blueOceanURI.toString());
+                    Class weburlbldr = cl.loadClass("org.jenkinsci.plugins.blueoceandisplayurl.BlueOceanDisplayURLImpl");
+                    Constructor ctor = weburlbldr.getConstructor();
+                    Object displayURL = ctor.newInstance();
+                    Method getRunURLMethod = weburlbldr.getMethod("getRunURL", hudson.model.Run.class);
+                    Object blueOceanURI = getRunURLMethod.invoke(displayURL, run);
+                    logsBlueOceanUrl = blueOceanURI.toString();
+                    logsBlueOceanUrl = logsBlueOceanUrl.replaceAll("http://unconfigured-jenkins-location/", "");
+                    if (logsBlueOceanUrl.startsWith("http://") || logsBlueOceanUrl.startsWith("https://"))
+                        // still normalize string
+                        logsBlueOceanUrl = joinPaths("", logsBlueOceanUrl);
+                    else
+                        logsBlueOceanUrl = joinPaths(rootUrl, logsBlueOceanUrl);
                 }
             }
         }
-        /*
-        Class factoryClass = cl.loadClass("io.jenkins.blueocean.service.embedded.rest.BluePipelineFactory");
-        Method resolveMethod = factoryClass.getMethod("resolve", hudson.model.Item.class);
-        Object resolveReturn = resolveMethod.invoke(null, run.getParent());
-        Method getOrg = resolveReturn.getClass().getMethod("getOrganization", null);
-        Object org = getOrg.invoke(resolveReturn, null);
-        logsBlueOceanUrl = joinPaths(rootUrl, "blue", "organizations", URLEncoder.encode(org.toString(), "UTF-8"), 
-                URLEncoder.encode(run.getParent().getName(), "UTF-8"), "detail",
-                URLEncoder.encode(run.getParent().getName(), "UTF-8"), Integer.toString(run.getNumber()), "pipeline");
-         */
     } catch (Throwable t) {
         if (logger.isLoggable(Level.FINE))
             logger.log(Level.FINE, "upsertBuild", t);
