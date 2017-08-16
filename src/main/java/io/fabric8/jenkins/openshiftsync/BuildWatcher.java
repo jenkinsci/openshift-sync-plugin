@@ -89,7 +89,7 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
   
 
   public void start() {
-    BuildToParametersActionMap.initialize();
+    BuildToActionMapper.initialize();
     super.start();
   }
 
