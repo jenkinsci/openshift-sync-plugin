@@ -63,9 +63,23 @@ public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
               .build()
           );
         
-        ParametersAction params = dumpParams(actions);        
+        ParametersAction params = dumpParams(actions);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine("ParametersAction: " + params.toString());
+        }
         if (params != null && ret != null)
-            BuildToParametersActionMap.add(ret.getMetadata().getName(), params);
+            BuildToActionMapper.addParameterAction(ret.getMetadata().getName(), params);
+
+        CauseAction cause = dumpCause(actions);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine("get CauseAction: " + cause.getDisplayName());
+            for (Cause c: cause.getCauses()) {
+                LOGGER.fine("Cause: " + c.getShortDescription());
+            }
+        }
+        if (cause != null && ret != null)
+            BuildToActionMapper.addCauseAction(ret.getMetadata().getName(), cause);
+
         return false;
       }
     }
@@ -86,6 +100,20 @@ public class BuildDecisionHandler extends Queue.QueueDecisionHandler {
       }
       return false;
     }
+
+  private static CauseAction dumpCause(List<Action> actions) {
+      for (Action action : actions) {
+          if (action instanceof CauseAction) {
+              CauseAction causeAction = (CauseAction) action;
+              if (LOGGER.isLoggable(Level.FINE))
+                  for (Cause cause : causeAction.getCauses()) {
+                      LOGGER.fine("cause: " + cause.getShortDescription());
+                  }
+              return causeAction;
+          }
+      }
+      return null;
+  }
 
   private static ParametersAction dumpParams(List<Action> actions) {
       for (Action action : actions) {

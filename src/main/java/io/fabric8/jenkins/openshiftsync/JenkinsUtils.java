@@ -64,6 +64,7 @@ import com.cloudbees.plugins.credentials.CredentialsParameterDefinition;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -289,8 +290,30 @@ public class JenkinsUtils {
     synchronized(buildConfig.getMetadata().getUid().intern()) {
         updateSourceCredentials(buildConfig);
 
-        List<Action> buildActions = new ArrayList<Action>();
-        buildActions.add(new CauseAction(new BuildCause(build, bcProp.getUid())));
+        // We need to ensure that we do not remove
+        // existing Causes from a Run since other
+        // plugins may rely on them.
+        List<Cause> newCauses = new ArrayList<>();
+        newCauses.add(new BuildCause(build, bcProp.getUid()));
+        CauseAction originalCauseAction = BuildToActionMapper.removeCauseAction(build.getMetadata().getName());
+        if (originalCauseAction != null) {
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine("Adding existing causes...");
+                for (Cause c: originalCauseAction.getCauses()) {
+                    LOGGER.fine("orginal cause: " + c.getShortDescription());
+                }
+            }
+            newCauses.addAll(originalCauseAction.getCauses());
+            if (LOGGER.isLoggable(Level.FINE)) {
+                for (Cause c: newCauses) {
+                    LOGGER.fine("new cause: " + c.getShortDescription());
+                }
+            }
+        }
+
+        List<Action> buildActions = new ArrayList<>();
+        CauseAction bCauseAction = new CauseAction(newCauses);
+        buildActions.add(bCauseAction);
 
         GitBuildSource gitBuildSource = build.getSpec().getSource().getGit();
         SourceRevision sourceRevision = build.getSpec().getRevision();
@@ -307,7 +330,7 @@ public class JenkinsUtils {
           }
         }
         
-        ParametersAction userProvidedParams = BuildToParametersActionMap.remove(build.getMetadata().getName());
+        ParametersAction userProvidedParams = BuildToActionMapper.removeParameterAction(build.getMetadata().getName());
         // grab envs from actual build in case user overrode default values via `oc start-build -e`
         JenkinsPipelineBuildStrategy strat = build.getSpec().getStrategy().getJenkinsPipelineStrategy();
         // only add new param defs for build envs which are not in build config envs
