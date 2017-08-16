@@ -241,6 +241,14 @@ public class OpenShiftUtils {
       logger.log(Level.WARNING, "Could not find Route for service " + namespace + "/" + serviceName + ". " + e, e);
     }
 
+    // let's try the Jenkins configured root url
+    // this can be needed if someone is not using 'jenkins'
+    // as the service name.
+    String rootUrl = Jenkins.getInstance().getRootUrl();
+    if (StringUtils.isNotEmpty(rootUrl)) {
+      return rootUrl;
+    }
+
     // lets default to the service DNS name
     return defaultProtocolText + serviceName;
   }
