@@ -639,6 +639,9 @@ public class JenkinsUtils {
       }
     
     public static void addPodTemplate(PodTemplate podTemplate) {
+        // clear out existing template with same name; k8s plugin maintains list, not map
+        removePodTemplate(podTemplate);
+        
         KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
         if(kubeCloud != null){
           LOGGER.info("Adding PodTemplate: " + podTemplate.getName());
