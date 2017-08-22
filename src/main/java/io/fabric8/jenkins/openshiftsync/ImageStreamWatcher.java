@@ -104,7 +104,6 @@ public class ImageStreamWatcher extends BaseWatcher implements Watcher<ImageStre
                     for (PodTemplate entry : slavesFromIS) {
                         if (this.predefinedOpenShiftSlaves.contains(entry.getName()))
                             continue;
-                        JenkinsUtils.removePodTemplate(entry);
                         JenkinsUtils.addPodTemplate(entry);
                     }
                     // go back and remove tracked items that no longer are marked slaves
