@@ -22,13 +22,13 @@ import hudson.model.CauseAction;
 import hudson.model.ParametersAction;
 
 public class BuildToActionMapper {
-    
+
     private static Map<String, ParametersAction> buildToParametersMap;
     private static Map<String, CauseAction> buildToCauseMap;
 
     private BuildToActionMapper() {
     }
-    
+
     static synchronized void initialize() {
         if (buildToParametersMap == null) {
             buildToParametersMap = new ConcurrentHashMap<String, ParametersAction>();
@@ -37,11 +37,12 @@ public class BuildToActionMapper {
             buildToCauseMap = new ConcurrentHashMap<String, CauseAction>();
         }
     }
-    
-    static synchronized void addParameterAction(String buildId, ParametersAction params) {
+
+    static synchronized void addParameterAction(String buildId,
+            ParametersAction params) {
         buildToParametersMap.put(buildId, params);
     }
-    
+
     static synchronized ParametersAction removeParameterAction(String buildId) {
         return buildToParametersMap.remove(buildId);
     }
