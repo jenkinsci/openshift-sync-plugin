@@ -435,6 +435,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
      */
     protected boolean shouldPollRun(Run run) {
         return run instanceof WorkflowRun
-                && run.getCause(BuildCause.class) != null;
+                && run.getCause(BuildCause.class) != null &&
+                GlobalPluginConfiguration.get().isEnabled();
     }
 }
