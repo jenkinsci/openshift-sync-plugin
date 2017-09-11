@@ -15,7 +15,6 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.listeners.ItemListener;
@@ -23,7 +22,6 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.openshift.api.model.BuildConfig;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
-import org.kohsuke.stapler.DataBoundConstructor;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -31,7 +29,6 @@ import java.util.logging.Logger;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.removeJobWithBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.updateBuildConfigFromJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.apache.commons.lang.StringUtils.isNotBlank;
 
@@ -46,40 +43,29 @@ public class PipelineJobListener extends ItemListener {
     private static final Logger logger = Logger
             .getLogger(PipelineJobListener.class.getName());
 
-    private String server;
-    private String[] namespaces;
-
     public PipelineJobListener() {
-        init();
-    }
-
-    @DataBoundConstructor
-    @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public PipelineJobListener(String server, String[] namespaces) {
-        this.server = server;
-        this.namespaces = namespaces;
-        init();
-    }
-
-    private void init() {
-        namespaces = OpenShiftUtils.getNamespaceOrUseDefault(namespaces,
-                getOpenShiftClient());
     }
 
     @Override
     public void onCreated(Item item) {
+        if (!GlobalPluginConfiguration.get().isEnabled())
+            return;
         super.onCreated(item);
         upsertItem(item);
     }
 
     @Override
     public void onUpdated(Item item) {
+        if (!GlobalPluginConfiguration.get().isEnabled())
+            return;
         super.onUpdated(item);
         upsertItem(item);
     }
 
     @Override
     public void onDeleted(Item item) {
+        if (!GlobalPluginConfiguration.get().isEnabled())
+            return;
         super.onDeleted(item);
         if (item instanceof WorkflowJob) {
             WorkflowJob job = (WorkflowJob) item;
