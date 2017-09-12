@@ -55,7 +55,7 @@ public class BuildConfigToJobMapper {
 
     public static FlowDefinition mapBuildConfigToFlow(BuildConfig bc)
             throws IOException {
-        if (!OpenShiftUtils.isJenkinsBuildConfig(bc)) {
+        if (!OpenShiftUtils.isPipelineStrategyBuildConfig(bc)) {
             return null;
         }
 

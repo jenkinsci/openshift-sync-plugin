@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -55,6 +56,18 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
     private static final Logger logger = Logger.getLogger(BuildWatcher.class
             .getName());
 
+    // the fabric8 classes like Build have equal/hashcode annotations that
+    // should allow
+    // us to index via the objects themselves;
+    // now that listing interval is 5 minutes (used to be 10 seconds), we have
+    // seen
+    // timing windows where if the build watch events come before build config
+    // watch events
+    // when both are created in a simultaneous fashion, there is an up to 5
+    // minute delay
+    // before the job run gets kicked off
+    private static final HashSet<Build> buildsWithNoBCList = new HashSet<Build>();
+
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public BuildWatcher(String[] namespaces) {
         super(namespaces);
@@ -69,6 +82,11 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                     logger.fine("No Openshift Token credential defined.");
                     return;
                 }
+                // prior to finding new builds poke the BuildWatcher builds with
+                // no BC list and see if we
+                // can create job runs for premature builds we already know
+                // about
+                BuildWatcher.flushBuildsWithNoBCList();
                 for (String namespace : namespaces) {
                     try {
                         logger.fine("listing Build resources");
@@ -113,6 +131,8 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
     @SuppressFBWarnings("SF_SWITCH_NO_DEFAULT")
     @Override
     public synchronized void eventReceived(Action action, Build build) {
+        if (!OpenShiftUtils.isPipelineStrategyBuild(build))
+            return;
         try {
             switch (action) {
             case ADDED:
@@ -151,6 +171,8 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
             Map<BuildConfig, List<Build>> buildConfigBuildMap = new HashMap<>(
                     items.size());
             for (Build b : items) {
+                if (!OpenShiftUtils.isPipelineStrategyBuild(b))
+                    continue;
                 String buildConfigName = b.getStatus().getConfig().getName();
                 if (StringUtils.isEmpty(buildConfigName)) {
                     continue;
@@ -163,6 +185,9 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                             .inNamespace(namespace).withName(buildConfigName)
                             .get();
                     if (bc == null) {
+                        // if the bc is not there via a REST get, then it is not
+                        // going to be, and we are not handling manual creation
+                        // of pipeline build objects, so don't bother with "no bc list"
                         continue;
                     }
                     buildConfigMap.put(bcMapKey, bc);
@@ -185,11 +210,25 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                 }
                 WorkflowJob job = getJobFromBuildConfig(bc);
                 if (job == null) {
+                    List<Build> builds = buildConfigBuilds.getValue();
+                    for (Build b : builds) {
+                        logger.info("skipping listed new build "
+                                + b.getMetadata().getName()
+                                + " no job at this time");
+                        addBuildToNoBCList(b);
+                    }
                     continue;
                 }
                 BuildConfigProjectProperty bcp = job
                         .getProperty(BuildConfigProjectProperty.class);
                 if (bcp == null) {
+                    List<Build> builds = buildConfigBuilds.getValue();
+                    for (Build b : builds) {
+                        logger.info("skipping listed new build "
+                                + b.getMetadata().getName()
+                                + " no prop at this time");
+                        addBuildToNoBCList(b);
+                    }
                     continue;
                 }
                 List<Build> builds = buildConfigBuilds.getValue();
@@ -204,12 +243,20 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
             WorkflowJob job = getJobFromBuild(build);
             if (job != null) {
                 cancelBuild(job, build);
+            } else {
+                removeBuildFromNoBCList(build);
             }
+        } else {
+            // see if any pre-BC cached builds can now be flushed
+            flushBuildsWithNoBCList();
         }
     }
 
     public static synchronized boolean addEventToJenkinsJobRun(Build build)
             throws IOException {
+        // should have been caught upstack, but just in case since public method
+        if (!OpenShiftUtils.isPipelineStrategyBuild(build))
+            return false;
         BuildStatus status = build.getStatus();
         if (status != null) {
             if (isCancelled(status)) {
@@ -225,7 +272,46 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
         if (job != null) {
             return triggerJob(job, build);
         }
+        logger.info("skipping watch event for build "
+                + build.getMetadata().getName() + " no job at this time");
+        addBuildToNoBCList(build);
         return false;
+    }
+
+    public static synchronized void addBuildToNoBCList(Build build) {
+        // should have been caught upstack, but just in case since public method
+        if (!OpenShiftUtils.isPipelineStrategyBuild(build))
+            return;
+        buildsWithNoBCList.add(build);
+    }
+
+    private static synchronized void removeBuildFromNoBCList(Build build) {
+        buildsWithNoBCList.remove(build);
+    }
+
+    private static synchronized void clearNoBCList() {
+        buildsWithNoBCList.clear();
+    }
+
+    // trigger any builds whose watch events arrived before the
+    // corresponding build config watch events
+    public static synchronized void flushBuildsWithNoBCList() {
+        HashSet<Build> clone = (HashSet<Build>) buildsWithNoBCList.clone();
+        clearNoBCList();
+        for (Build build : clone) {
+            WorkflowJob job = getJobFromBuild(build);
+            if (job != null)
+                try {
+                    logger.info("triggering job run for previously skipped build "
+                            + build.getMetadata().getName());
+                    triggerJob(job, build);
+                } catch (IOException e) {
+                    logger.log(Level.WARNING, "flushCachedBuilds", e);
+                }
+            else
+                addBuildToNoBCList(build);
+        }
+
     }
 
     // innerDeleteEventToJenkinsJobRun is the actual delete logic at the heart
@@ -243,6 +329,10 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                             return null;
                         }
                     });
+        } else {
+            // in case build was created and deleted quickly, prior to seeing BC
+            // event, clear out from pre-BC cache
+            removeBuildFromNoBCList(build);
         }
     }
 

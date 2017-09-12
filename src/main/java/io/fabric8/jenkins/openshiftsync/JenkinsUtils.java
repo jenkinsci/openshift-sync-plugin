@@ -623,6 +623,8 @@ public class JenkinsUtils {
         boolean jobIsBuilding = job.isBuilding();
         for (int i = 0; i < builds.size(); i++) {
             Build b = builds.get(i);
+            if (!OpenShiftUtils.isPipelineStrategyBuild(b))
+                continue;
             // For SerialLatestOnly we should try to cancel all builds before
             // the latest one requested.
             if (isSerialLatestOnly) {
