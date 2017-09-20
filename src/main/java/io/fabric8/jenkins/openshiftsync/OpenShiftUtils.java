@@ -124,7 +124,7 @@ public class OpenShiftUtils {
      * @return true if this is an OpenShift BuildConfig which should be mirrored
      *         to a Jenkins Job
      */
-    public static boolean isJenkinsBuildConfig(BuildConfig bc) {
+    public static boolean isPipelineStrategyBuildConfig(BuildConfig bc) {
         if (BuildConfigToJobMapper.JENKINS_PIPELINE_BUILD_STRATEGY
                 .equalsIgnoreCase(bc.getSpec().getStrategy().getType())
                 && bc.getSpec().getStrategy().getJenkinsPipelineStrategy() != null) {
@@ -141,6 +141,15 @@ public class OpenShiftUtils {
             }
         }
 
+        return false;
+    }
+
+    public static boolean isPipelineStrategyBuild(Build b) {
+        if (BuildConfigToJobMapper.JENKINS_PIPELINE_BUILD_STRATEGY
+                .equalsIgnoreCase(b.getSpec().getStrategy().getType())
+                && b.getSpec().getStrategy().getJenkinsPipelineStrategy() != null) {
+            return true;
+        }
         return false;
     }
 

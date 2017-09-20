@@ -99,6 +99,10 @@ public class BuildConfigWatcher extends BaseWatcher implements
                                 e);
                     }
                 }
+                // poke the BuildWatcher builds with no BC list and see if we
+                // can create job
+                // runs for premature builds
+                BuildWatcher.flushBuildsWithNoBCList();
             }
         };
     }
@@ -139,6 +143,10 @@ public class BuildConfigWatcher extends BaseWatcher implements
                 modifyEventToJenkinsJob(buildConfig);
                 break;
             }
+            // if bc event came after build events, let's
+            // poke the BuildWatcher builds with no BC list to create job
+            // runs
+            BuildWatcher.flushBuildsWithNoBCList();
         } catch (Exception e) {
             logger.log(Level.WARNING, "Caught: " + e, e);
         }
@@ -163,7 +171,7 @@ public class BuildConfigWatcher extends BaseWatcher implements
     }
 
     private void upsertJob(final BuildConfig buildConfig) throws Exception {
-        if (isJenkinsBuildConfig(buildConfig)) {
+        if (isPipelineStrategyBuildConfig(buildConfig)) {
             // sync on intern of name should guarantee sync on same actual obj
             synchronized (buildConfig.getMetadata().getUid().intern()) {
                 ACL.impersonate(ACL.SYSTEM,
@@ -298,7 +306,7 @@ public class BuildConfigWatcher extends BaseWatcher implements
 
     private synchronized void modifyEventToJenkinsJob(BuildConfig buildConfig)
             throws Exception {
-        if (isJenkinsBuildConfig(buildConfig)) {
+        if (isPipelineStrategyBuildConfig(buildConfig)) {
             upsertJob(buildConfig);
             return;
         }
