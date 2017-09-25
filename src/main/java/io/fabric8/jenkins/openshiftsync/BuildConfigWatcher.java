@@ -115,6 +115,8 @@ public class BuildConfigWatcher extends BaseWatcher implements
     }
 
     private synchronized void onInitialBuildConfigs(BuildConfigList buildConfigs) {
+        if (buildConfigs == null)
+            return;
         List<BuildConfig> items = buildConfigs.getItems();
         if (items != null) {
             for (BuildConfig buildConfig : items) {
