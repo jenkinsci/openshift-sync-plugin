@@ -33,5 +33,17 @@
              description="The namespace to sync BuildConfigs with. Environment variables in the form ${name} will be expanded.  Multiple namespaces can be listed using a space separator.">
       <f:textbox/>
     </f:entry>
+    <f:entry title="Sync Job Name Pattern " field="jobNamePattern"
+             description="The regular expression to match pipeline job names which should be sync'd to BuildConfigs in OpenShift - leave blank to not sync Jenkins Jobs to OpenShift BuildConfigs.">
+      <f:textbox/>
+    </f:entry>
+    <f:entry title="Skip organization prefix" field="skipOrganizationPrefix"
+             description="What organization name prefix should we omit from the generated OpenShift BuildConfig resources created by the sync plugin. Its common for one user/team to use the same git organization so prefixing all BuildConfig names with the organization name can be noisy.">
+      <f:textbox/>
+    </f:entry>
+    <f:entry title="Skip branch suffix" field="skipBranchSuffix"
+             description="What branch name suffix should we omit from the generated OpenShift BuildConfig resources created by the sync plugin.  Its common to use a common branch name like `master` which we can omit from names to avoid noise.">
+      <f:textbox/>
+    </f:entry>
   </f:section>
 </j:jelly>
