@@ -293,9 +293,9 @@ public class JenkinsUtils {
             return false;
         }
 
-        BuildConfigProjectProperty bcProp = job
-                .getProperty(BuildConfigProjectProperty.class);
-        if (bcProp == null) {
+        BuildConfigProjectProperty bcProp = job.getProperty(BuildConfigProjectProperty.class);
+        if (bcProp == null || bcProp.getBuildRunPolicy() == null) {
+            LOGGER.warning("aborting trigger of build " + build + "because of missing bc project property or run policy");
             return false;
         }
 
