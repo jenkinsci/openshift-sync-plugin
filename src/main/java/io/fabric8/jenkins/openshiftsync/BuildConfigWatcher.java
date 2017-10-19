@@ -71,12 +71,25 @@ public class BuildConfigWatcher extends BaseWatcher implements
                     return;
                 }
                 for (String namespace : namespaces) {
+                    BuildConfigList buildConfigs = null;
                     try {
                         logger.fine("listing BuildConfigs resources");
-                        final BuildConfigList buildConfigs = getAuthenticatedOpenShiftClient()
+                        buildConfigs = getAuthenticatedOpenShiftClient()
                                 .buildConfigs().inNamespace(namespace).list();
                         onInitialBuildConfigs(buildConfigs);
                         logger.fine("handled BuildConfigs resources");
+                    } catch (Exception e) {
+                        logger.log(SEVERE, "Failed to load BuildConfigs: " + e,
+                                e);
+                    }
+                    try {
+                        String resourceVersion = "0";
+                        if (buildConfigs == null) {
+                            logger.warning("Unable to get build config list; impacts resource version used for watch");
+                        } else {
+                            resourceVersion = buildConfigs.getMetadata()
+                                    .getResourceVersion();
+                        }
                         if (watches.get(namespace) == null) {
                             logger.info("creating BuildConfig watch for namespace "
                                     + namespace
@@ -88,10 +101,7 @@ public class BuildConfigWatcher extends BaseWatcher implements
                                     getAuthenticatedOpenShiftClient()
                                             .buildConfigs()
                                             .inNamespace(namespace)
-                                            .withResourceVersion(
-                                                    buildConfigs
-                                                            .getMetadata()
-                                                            .getResourceVersion())
+                                            .withResourceVersion(resourceVersion)
                                             .watch(BuildConfigWatcher.this));
                         }
                     } catch (Exception e) {

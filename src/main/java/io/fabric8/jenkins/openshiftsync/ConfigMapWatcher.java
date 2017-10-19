@@ -60,12 +60,24 @@ public class ConfigMapWatcher extends BaseWatcher implements Watcher<ConfigMap> 
                     return;
                 }
                 for (String namespace : namespaces) {
+                    ConfigMapList configMaps = null;
                     try {
                         logger.fine("listing ConfigMap resources");
-                        final ConfigMapList configMaps = getAuthenticatedOpenShiftClient()
+                        configMaps = getAuthenticatedOpenShiftClient()
                                 .configMaps().inNamespace(namespace).list();
                         onInitialConfigMaps(configMaps);
                         logger.fine("handled ConfigMap resources");
+                    } catch (Exception e) {
+                        logger.log(SEVERE, "Failed to load ConfigMaps: " + e, e);
+                    }
+                    try {
+                        String resourceVersion = "0";
+                        if (configMaps == null) {
+                            logger.warning("Unable to get config map list; impacts resource version used for watch");
+                        } else {
+                            resourceVersion = configMaps.getMetadata()
+                                    .getResourceVersion();
+                        }
                         if (watches.get(namespace) == null) {
                             logger.info("creating ConfigMap watch for namespace "
                                     + namespace
@@ -77,10 +89,7 @@ public class ConfigMapWatcher extends BaseWatcher implements Watcher<ConfigMap> 
                                     getAuthenticatedOpenShiftClient()
                                             .configMaps()
                                             .inNamespace(namespace)
-                                            .withResourceVersion(
-                                                    configMaps
-                                                            .getMetadata()
-                                                            .getResourceVersion())
+                                            .withResourceVersion(resourceVersion)
                                             .watch(ConfigMapWatcher.this));
                         }
                     } catch (Exception e) {

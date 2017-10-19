@@ -59,12 +59,25 @@ public class ImageStreamWatcher extends BaseWatcher implements
                     return;
                 }
                 for (String namespace : namespaces) {
+                    ImageStreamList imageStreams = null;
                     try {
                         logger.fine("listing ImageStream resources");
-                        final ImageStreamList imageStreams = getAuthenticatedOpenShiftClient()
+                        imageStreams = getAuthenticatedOpenShiftClient()
                                 .imageStreams().inNamespace(namespace).list();
                         onInitialImageStream(imageStreams);
                         logger.fine("handled ImageStream resources");
+                    } catch (Exception e) {
+                        logger.log(SEVERE, "Failed to load ImageStreams: " + e,
+                                e);
+                    }
+                    try {
+                        String resourceVersion = "0";
+                        if (imageStreams == null) {
+                            logger.warning("Unable to get image stream list; impacts resource version used for watch");
+                        } else {
+                            resourceVersion = imageStreams.getMetadata()
+                                    .getResourceVersion();
+                        }
                         if (watches.get(namespace) == null) {
                             logger.info("creating ImageStream watch for namespace "
                                     + namespace
@@ -76,10 +89,7 @@ public class ImageStreamWatcher extends BaseWatcher implements
                                     getAuthenticatedOpenShiftClient()
                                             .imageStreams()
                                             .inNamespace(namespace)
-                                            .withResourceVersion(
-                                                    imageStreams
-                                                            .getMetadata()
-                                                            .getResourceVersion())
+                                            .withResourceVersion(resourceVersion)
                                             .watch(ImageStreamWatcher.this));
                         }
                     } catch (Exception e) {
