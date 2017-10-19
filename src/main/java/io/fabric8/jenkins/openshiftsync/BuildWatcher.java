@@ -88,15 +88,28 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                 // about
                 BuildWatcher.flushBuildsWithNoBCList();
                 for (String namespace : namespaces) {
+                    BuildList newBuilds = null;
                     try {
                         logger.fine("listing Build resources");
-                        BuildList newBuilds = getAuthenticatedOpenShiftClient()
+                        newBuilds = getAuthenticatedOpenShiftClient()
                                 .builds()
                                 .inNamespace(namespace)
                                 .withField(OPENSHIFT_BUILD_STATUS_FIELD,
                                         BuildPhases.NEW).list();
                         onInitialBuilds(newBuilds);
                         logger.fine("handled Build resources");
+                    } catch (Exception e) {
+                        logger.log(Level.SEVERE,
+                                "Failed to load initial Builds: " + e, e);
+                    }
+                    try {
+                        String resourceVersion = "0";
+                        if (newBuilds == null) {
+                            logger.warning("Unable to get build list; impacts resource version used for watch");
+                        } else {
+                            resourceVersion = newBuilds.getMetadata()
+                                    .getResourceVersion();
+                        }
                         if (watches.get(namespace) == null) {
                             logger.info("creating Build watch for namespace "
                                     + namespace
@@ -109,9 +122,7 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                                             .builds()
                                             .inNamespace(namespace)
                                             .withResourceVersion(
-                                                    newBuilds
-                                                            .getMetadata()
-                                                            .getResourceVersion())
+                                                    resourceVersion)
                                             .watch(BuildWatcher.this));
                         }
                     } catch (Exception e) {
@@ -159,11 +170,44 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
             Collections.sort(items, new Comparator<Build>() {
                 @Override
                 public int compare(Build b1, Build b2) {
-                    return Long.compare(
-                            Long.parseLong(b1.getMetadata().getAnnotations()
-                                    .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
-                            Long.parseLong(b2.getMetadata().getAnnotations()
-                                    .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)));
+                    if (b1.getMetadata().getAnnotations() == null
+                            || b1.getMetadata().getAnnotations()
+                                    .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER) == null) {
+                        logger.warning("cannot compare build "
+                                + b1.getMetadata().getName()
+                                + " from namespace "
+                                + b1.getMetadata().getNamespace()
+                                + ", has bad annotations: "
+                                + b1.getMetadata().getAnnotations());
+                        return 0;
+                    }
+                    if (b2.getMetadata().getAnnotations() == null
+                            || b2.getMetadata().getAnnotations()
+                                    .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER) == null) {
+                        logger.warning("cannot compare build "
+                                + b2.getMetadata().getName()
+                                + " from namespace "
+                                + b2.getMetadata().getNamespace()
+                                + ", has bad annotations: "
+                                + b2.getMetadata().getAnnotations());
+                        return 0;
+                    }
+                    int rc = 0;
+                    try {
+                        rc = Long.compare(
+
+                                Long.parseLong(b1
+                                        .getMetadata()
+                                        .getAnnotations()
+                                        .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+                                Long.parseLong(b2
+                                        .getMetadata()
+                                        .getAnnotations()
+                                        .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)));
+                    } catch (Throwable t) {
+                        logger.log(Level.FINE, "onInitialBuilds", t);
+                    }
+                    return rc;
                 }
             });
 
