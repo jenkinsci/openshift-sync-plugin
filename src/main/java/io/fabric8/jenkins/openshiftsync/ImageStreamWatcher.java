@@ -82,8 +82,7 @@ public class ImageStreamWatcher extends BaseWatcher implements
                             logger.info("creating ImageStream watch for namespace "
                                     + namespace
                                     + " and resource version "
-                                    + imageStreams.getMetadata()
-                                            .getResourceVersion());
+                                    + resourceVersion);
                             watches.put(
                                     namespace,
                                     getAuthenticatedOpenShiftClient()
