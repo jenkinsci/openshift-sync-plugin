@@ -67,40 +67,61 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
 		super(namespaces);
 	}
 
-	public Runnable getStartTimerTask() {
-		return new SafeTimerTask() {
-			@Override
-			public void doRun() {
-				if (!CredentialsUtils.hasCredentials()) {
-					logger.fine("No Openshift Token credential defined.");
-					return;
-				}
-				for (String namespace : namespaces) {
-					try {
-						logger.fine("listing BuildConfigs resources");
-						final BuildConfigList buildConfigs = getAuthenticatedOpenShiftClient().buildConfigs()
-								.inNamespace(namespace).list();
-						onInitialBuildConfigs(buildConfigs);
-						logger.fine("handled BuildConfigs resources");
-						if (watches.get(namespace) == null) {
-							logger.info("creating BuildConfig watch for namespace " + namespace
-									+ " and resource version " + buildConfigs.getMetadata().getResourceVersion());
-							watches.put(namespace,
-									getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace)
-											.withResourceVersion(buildConfigs.getMetadata().getResourceVersion())
-											.watch(BuildConfigWatcher.this));
-						}
-					} catch (Exception e) {
-						logger.log(SEVERE, "Failed to load BuildConfigs: " + e, e);
-					}
-				}
-				// poke the BuildWatcher builds with no BC list and see if we
-				// can create job
-				// runs for premature builds
-				BuildWatcher.flushBuildsWithNoBCList();
-			}
-		};
-	}
+    public Runnable getStartTimerTask() {
+        return new SafeTimerTask() {
+            @Override
+            public void doRun() {
+                if (!CredentialsUtils.hasCredentials()) {
+                    logger.fine("No Openshift Token credential defined.");
+                    return;
+                }
+                for (String namespace : namespaces) {
+                    BuildConfigList buildConfigs = null;
+                    try {
+                        logger.fine("listing BuildConfigs resources");
+                        buildConfigs = getAuthenticatedOpenShiftClient()
+                                .buildConfigs().inNamespace(namespace).list();
+                        onInitialBuildConfigs(buildConfigs);
+                        logger.fine("handled BuildConfigs resources");
+                    } catch (Exception e) {
+                        logger.log(SEVERE, "Failed to load BuildConfigs: " + e,
+                                e);
+                    }
+                    try {
+                        String resourceVersion = "0";
+                        if (buildConfigs == null) {
+                            logger.warning("Unable to get build config list; impacts resource version used for watch");
+                        } else {
+                            resourceVersion = buildConfigs.getMetadata()
+                                    .getResourceVersion();
+                        }
+                        if (watches.get(namespace) == null) {
+                            logger.info("creating BuildConfig watch for namespace "
+                                    + namespace
+                                    + " and resource version "
+                                    + buildConfigs.getMetadata()
+                                            .getResourceVersion());
+                            watches.put(
+                                    namespace,
+                                    getAuthenticatedOpenShiftClient()
+                                            .buildConfigs()
+                                            .inNamespace(namespace)
+                                            .withResourceVersion(
+                                                    resourceVersion)
+                                            .watch(BuildConfigWatcher.this));
+                        }
+                    } catch (Exception e) {
+                        logger.log(SEVERE, "Failed to load BuildConfigs: " + e,
+                                e);
+                    }
+                }
+                // poke the BuildWatcher builds with no BC list and see if we
+                // can create job
+                // runs for premature builds
+                BuildWatcher.flushBuildsWithNoBCList();
+            }
+        };
+    }
 
 	public synchronized void start() {
 		initializeBuildConfigToJobMap();

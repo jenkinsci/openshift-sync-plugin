@@ -155,13 +155,22 @@ public class OpenShiftUtils {
 		return false;
 	}
 
-	public static boolean isPipelineStrategyBuild(Build b) {
-		if (BuildConfigToJobMapper.JENKINS_PIPELINE_BUILD_STRATEGY.equalsIgnoreCase(b.getSpec().getStrategy().getType())
-				&& b.getSpec().getStrategy().getJenkinsPipelineStrategy() != null) {
-			return true;
-		}
-		return false;
-	}
+    public static boolean isPipelineStrategyBuild(Build b) {
+        if (b.getSpec() == null) {
+            logger.warning("bad input, null spec: " + b);
+            return false;
+        }
+        if (b.getSpec().getStrategy() == null) {
+            logger.warning("bad input, null strategy: " + b);
+            return false;
+        }
+        if (BuildConfigToJobMapper.JENKINS_PIPELINE_BUILD_STRATEGY
+                .equalsIgnoreCase(b.getSpec().getStrategy().getType())
+                && b.getSpec().getStrategy().getJenkinsPipelineStrategy() != null) {
+            return true;
+        }
+        return false;
+    }
 
 	/**
 	 * Finds the Jenkins job name for the given {@link BuildConfig}.
