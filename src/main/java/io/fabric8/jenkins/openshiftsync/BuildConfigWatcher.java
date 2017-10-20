@@ -24,8 +24,10 @@ import hudson.util.XStream2;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigList;
+import io.fabric8.openshift.api.model.BuildList;
 import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
+import jenkins.util.Timer;
 
 import org.apache.tools.ant.filters.StringInputStream;
 import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
@@ -37,6 +39,7 @@ import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -44,6 +47,8 @@ import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.*;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.*;
 import static java.util.logging.Level.SEVERE;
@@ -159,6 +164,41 @@ public class BuildConfigWatcher extends BaseWatcher implements
             // poke the BuildWatcher builds with no BC list to create job
             // runs
             BuildWatcher.flushBuildsWithNoBCList();
+            // now, if the build event was lost and never received, builds
+            // will stay in
+            // new for 5 minutes ... let's launch a background thread to
+            // clean them up
+            // at a quicker interval than the default 5 minute general build
+            // relist function
+            if (action == Watcher.Action.ADDED) {
+                Runnable backupBuildQuery = new SafeTimerTask() {
+                    @Override
+                    public void doRun() {
+                        if (!CredentialsUtils.hasCredentials()) {
+                            logger.fine("No Openshift Token credential defined.");
+                            return;
+                        }
+                        BuildList buildList = getAuthenticatedOpenShiftClient()
+                                .builds()
+                                .inNamespace(
+                                        buildConfig.getMetadata()
+                                                .getNamespace())
+                                .withField(OPENSHIFT_BUILD_STATUS_FIELD,
+                                        BuildPhases.NEW)
+                                .withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME,
+                                        buildConfig.getMetadata().getName())
+                                .list();
+                        if (buildList.getItems().size() > 0) {
+                            logger.info("build backup query for "
+                                    + buildConfig.getMetadata().getName()
+                                    + " found new builds");
+                            BuildWatcher.onInitialBuilds(buildList);
+                        }
+                    }
+                };
+                Timer.get().schedule(backupBuildQuery, 10 * 1000,
+                        TimeUnit.MILLISECONDS);
+            }
         } catch (Exception e) {
             logger.log(Level.WARNING, "Caught: " + e, e);
         }
