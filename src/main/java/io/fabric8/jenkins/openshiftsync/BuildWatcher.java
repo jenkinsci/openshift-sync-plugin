@@ -114,8 +114,7 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                             logger.info("creating Build watch for namespace "
                                     + namespace
                                     + " and resource version "
-                                    + newBuilds.getMetadata()
-                                            .getResourceVersion());
+                                    + resourceVersion);
                             watches.put(
                                     namespace,
                                     getAuthenticatedOpenShiftClient()

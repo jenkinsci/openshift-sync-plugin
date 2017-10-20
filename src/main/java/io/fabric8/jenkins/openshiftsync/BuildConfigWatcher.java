@@ -107,8 +107,7 @@ public class BuildConfigWatcher extends BaseWatcher implements
                             logger.info("creating BuildConfig watch for namespace "
                                     + namespace
                                     + " and resource version "
-                                    + buildConfigs.getMetadata()
-                                            .getResourceVersion());
+                                    + resourceVersion);
                             watches.put(
                                     namespace,
                                     getAuthenticatedOpenShiftClient()
