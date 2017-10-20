@@ -100,7 +100,8 @@ public class BuildConfigWatcher extends BaseWatcher implements
                                     getAuthenticatedOpenShiftClient()
                                             .buildConfigs()
                                             .inNamespace(namespace)
-                                            .withResourceVersion(resourceVersion)
+                                            .withResourceVersion(
+                                                    resourceVersion)
                                             .watch(BuildConfigWatcher.this));
                         }
                     } catch (Exception e) {
