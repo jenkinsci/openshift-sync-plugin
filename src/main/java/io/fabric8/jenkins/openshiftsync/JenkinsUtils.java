@@ -611,11 +611,44 @@ public class JenkinsUtils {
                     return cancellationCompare;
                 }
 
-                return Long.compare(
-                        Long.parseLong(b1.getMetadata().getAnnotations()
-                                .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
-                        Long.parseLong(b2.getMetadata().getAnnotations()
-                                .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)));
+                if (b1.getMetadata().getAnnotations() == null
+                        || b1.getMetadata().getAnnotations()
+                                .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER) == null) {
+                    LOGGER.warning("cannot compare build "
+                            + b1.getMetadata().getName()
+                            + " from namespace "
+                            + b1.getMetadata().getNamespace()
+                            + ", has bad annotations: "
+                            + b1.getMetadata().getAnnotations());
+                    return 0;
+                }
+                if (b2.getMetadata().getAnnotations() == null
+                        || b2.getMetadata().getAnnotations()
+                                .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER) == null) {
+                    LOGGER.warning("cannot compare build "
+                            + b2.getMetadata().getName()
+                            + " from namespace "
+                            + b2.getMetadata().getNamespace()
+                            + ", has bad annotations: "
+                            + b2.getMetadata().getAnnotations());
+                    return 0;
+                }
+                int rc = 0;
+                try {
+                    rc = Long.compare(
+
+                            Long.parseLong(b1
+                                    .getMetadata()
+                                    .getAnnotations()
+                                    .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)),
+                            Long.parseLong(b2
+                                    .getMetadata()
+                                    .getAnnotations()
+                                    .get(OPENSHIFT_ANNOTATIONS_BUILD_NUMBER)));
+                } catch (Throwable t) {
+                    LOGGER.log(Level.FINE, "handleBuildList", t);
+                }
+                return rc;
             }
         });
         boolean isSerial = SERIAL.equals(buildConfigProjectProperty
