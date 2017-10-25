@@ -83,7 +83,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 	public GlobalPluginConfiguration() {
 		load();
 		configChange();
-		save();
+		//save();
 	}
 
 	public static GlobalPluginConfiguration get() {
