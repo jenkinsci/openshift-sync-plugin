@@ -23,7 +23,9 @@ import com.cloudbees.workflow.rest.external.StageNodeExt;
 import com.cloudbees.workflow.rest.external.StatusExt;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import hudson.Extension;
+import hudson.ExtensionList;
 import hudson.PluginManager;
 import hudson.model.Result;
 import hudson.model.Run;
@@ -34,6 +36,10 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildFluent;
 import io.fabric8.openshift.api.model.DoneableBuild;
+import io.jenkins.blueocean.rest.factory.BlueRunFactory;
+import io.jenkins.blueocean.rest.model.BluePipelineNode;
+import io.jenkins.blueocean.rest.model.BlueRun;
+import io.jenkins.blueocean.rest.model.BlueRun.BlueRunResult;
 import jenkins.model.Jenkins;
 import jenkins.util.Timer;
 
@@ -44,11 +50,15 @@ import org.jenkinsci.plugins.workflow.support.steps.input.InputStepExecution;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import javax.annotation.Nonnull;
+
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
@@ -195,9 +205,20 @@ public class BuildSyncRunListener extends RunListener<Run> {
 		}
 
 		RunExt wfRunExt = RunExt.create((WorkflowRun) run);
+        
+        // try blue run
+		BlueRun blueRun = null;
+        ExtensionList<BlueRunFactory> facts = BlueRunFactory.all();
+        for (BlueRunFactory fact : facts) {
+            blueRun = fact.getRun(run, null);
+            if (blueRun != null) {
+                break;
+            }
+            
+        }
 
 		try {
-			upsertBuild(run, wfRunExt);
+			upsertBuild(run, wfRunExt, blueRun);
 		} catch (KubernetesClientException e) {
 			if (e.getCode() == HttpStatus.SC_UNPROCESSABLE_ENTITY) {
 				runsToPoll.remove(run);
@@ -241,7 +262,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
 		return false;
 	}
 
-	private void upsertBuild(Run run, RunExt wfRunExt) {
+	private void upsertBuild(Run run, RunExt wfRunExt, BlueRun blueRun) {
 		if (run == null) {
 			return;
 		}
@@ -292,37 +313,70 @@ public class BuildSyncRunListener extends RunListener<Run> {
 				logger.log(Level.FINE, "upsertBuild", t);
 		}
 
+		Map<String,BlueRunResult> blueRunResults = new HashMap<String,BlueRunResult>();
+		if (blueRun != null) {
+	        Iterator<BluePipelineNode> iter = blueRun.getNodes().iterator();
+	        while (iter.hasNext()) {
+	            BluePipelineNode node = iter.next();
+	            if (node != null) {
+	                blueRunResults.put(node.getDisplayName(), node.getResult());
+	            }
+	        }
+		}
 		boolean pendingInput = false;
 		if (!wfRunExt.get_links().self.href.matches("^https?://.*$")) {
 			wfRunExt.get_links().self.setHref(joinPaths(rootUrl, wfRunExt.get_links().self.href));
 		}
 		int newNumStages = wfRunExt.getStages().size();
 		int newNumFlowNodes = 0;
-		for (StageNodeExt stage : wfRunExt.getStages()) {
-			FlowNodeExt.FlowNodeLinks links = stage.get_links();
-			if (!links.self.href.matches("^https?://.*$")) {
-				links.self.setHref(joinPaths(rootUrl, links.self.href));
-			}
-			if (links.getLog() != null && !links.getLog().href.matches("^https?://.*$")) {
-				links.getLog().setHref(joinPaths(rootUrl, links.getLog().href));
-			}
-			newNumFlowNodes = newNumFlowNodes + stage.getStageFlowNodes().size();
-			for (AtomFlowNodeExt node : stage.getStageFlowNodes()) {
-				FlowNodeExt.FlowNodeLinks nodeLinks = node.get_links();
-				if (!nodeLinks.self.href.matches("^https?://.*$")) {
-					nodeLinks.self.setHref(joinPaths(rootUrl, nodeLinks.self.href));
-				}
-				if (nodeLinks.getLog() != null && !nodeLinks.getLog().href.matches("^https?://.*$")) {
-					nodeLinks.getLog().setHref(joinPaths(rootUrl, nodeLinks.getLog().href));
-				}
-			}
+		Map<String,StageNodeExt> validStages = new HashMap<String,StageNodeExt>();
+        for (StageNodeExt stage : wfRunExt.getStages()) {
+            // the StatusExt.getStatus() cannot be trusted for declarative
+            // pipeline;
+            // for example, skipped steps/stages will be marked as complete;
+            // we leverage the blue ocean state machine to determine this
+            BlueRunResult result = blueRunResults.get(stage.getName());
+            if (result != null && result == BlueRunResult.NOT_BUILT) {
+                logger.info("skipping stage "
+                        + stage.getName()
+                        + " for the status JSON for pipeline run "
+                        + run.getDisplayName()
+                        + " because it was not executed (most likely because of a failure in another stage)");
+                continue;
+            }
+            validStages.put(stage.getName(), stage);
 
-			StatusExt status = stage.getStatus();
-			if (status != null && status.equals(StatusExt.PAUSED_PENDING_INPUT)) {
-				pendingInput = true;
-			}
-		}
+            FlowNodeExt.FlowNodeLinks links = stage.get_links();
+            if (!links.self.href.matches("^https?://.*$")) {
+                links.self.setHref(joinPaths(rootUrl, links.self.href));
+            }
+            if (links.getLog() != null
+                    && !links.getLog().href.matches("^https?://.*$")) {
+                links.getLog().setHref(joinPaths(rootUrl, links.getLog().href));
+            }
+            newNumFlowNodes = newNumFlowNodes
+                    + stage.getStageFlowNodes().size();
+            for (AtomFlowNodeExt node : stage.getStageFlowNodes()) {
+                FlowNodeExt.FlowNodeLinks nodeLinks = node.get_links();
+                if (!nodeLinks.self.href.matches("^https?://.*$")) {
+                    nodeLinks.self.setHref(joinPaths(rootUrl,
+                            nodeLinks.self.href));
+                }
+                if (nodeLinks.getLog() != null
+                        && !nodeLinks.getLog().href.matches("^https?://.*$")) {
+                    nodeLinks.getLog().setHref(
+                            joinPaths(rootUrl, nodeLinks.getLog().href));
+                }
+            }
 
+            StatusExt status = stage.getStatus();
+            if (status != null && status.equals(StatusExt.PAUSED_PENDING_INPUT)) {
+                pendingInput = true;
+            }
+        }
+		// override stages in case declarative has fooled base pipeline support
+		wfRunExt.setStages(new ArrayList<StageNodeExt>(validStages.values()));
+		
 		boolean needToUpdate = this.shouldUpdateOpenShiftBuild(cause, newNumStages, newNumFlowNodes,
 				wfRunExt.getStatus());
 		if (!needToUpdate) {
