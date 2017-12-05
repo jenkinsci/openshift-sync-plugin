@@ -800,7 +800,7 @@ public class JenkinsUtils {
 		// podTemplate.setInstanceCap(Integer.MAX_VALUE);
 		podTemplate.setName(name);
 		podTemplate.setLabel(label);
-		podTemplate.setAlwaysPullImage(false);
+		podTemplate.setAlwaysPullImage(true);
 		podTemplate.setCommand("");
 		podTemplate.setArgs("${computer.jnlpmac} ${computer.name}");
 		podTemplate.setRemoteFs("/tmp");
