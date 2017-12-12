@@ -140,24 +140,11 @@ public class ImageStreamWatcher extends BaseWatcher implements
                         .iterator();
                 while (iter.hasNext()) {
                     PodTemplate podTemplate = iter.next();
-                    if (!podTemplate.getName().equals(isname) && // actual IS
-                            !podTemplate.getName().startsWith(isname + ".")) // an
-                                                                             // IST
-                                                                             // starts
-                                                                             // with
-                                                                             // IS
-                                                                             // name
-                                                                             // followed
-                                                                             // by
-                                                                             // "."
-                                                                             // since
-                                                                             // we
-                                                                             // have
-                                                                             // to
-                                                                             // replace
-                                                                             // ":"
-                                                                             // with
-                                                                             // "."
+                    // either actual is or an IST, where and IST starts with
+                    // the IS name followed by "." (since we have to replace
+                    // ":" with "." elsewhere
+                    if (!podTemplate.getName().equals(isname) && 
+                        !podTemplate.getName().startsWith(isname + "."))
                         continue;
                     if (this.predefinedOpenShiftSlaves.contains(podTemplate
                             .getName()))
@@ -180,24 +167,11 @@ public class ImageStreamWatcher extends BaseWatcher implements
                 iter = JenkinsUtils.getPodTemplates().iterator();
                 while (iter.hasNext()) {
                     PodTemplate podTemplate = iter.next();
-                    if (!podTemplate.getName().equals(isname) && // actual IS
-                            !podTemplate.getName().startsWith(isname + ".")) // an
-                                                                             // IST
-                                                                             // starts
-                                                                             // with
-                                                                             // IS
-                                                                             // name
-                                                                             // followed
-                                                                             // by
-                                                                             // "."
-                                                                             // since
-                                                                             // we
-                                                                             // have
-                                                                             // to
-                                                                             // replace
-                                                                             // ":"
-                                                                             // with
-                                                                             // "."
+                    // either actual is or an IST, where and IST starts with
+                    // the IS name followed by "." (since we have to replace
+                    // ":" with "." elsewhere
+                    if (!podTemplate.getName().equals(isname) &&
+                        !podTemplate.getName().startsWith(isname + "."))
                         continue;
                     if (this.predefinedOpenShiftSlaves.contains(podTemplate
                             .getName()))

@@ -90,6 +90,7 @@ public class BuildConfigToJobMapper {
 					branchSpecs = Collections.singletonList(new BranchSpec(branchRef));
 				}
 				String credentialsId = updateSourceCredentials(bc);
+				// if credentialsID is null, go with an SCM where anonymous has to be sufficient
 				GitSCM scm = new GitSCM(
 						Collections.singletonList(new UserRemoteConfig(gitSource.getUri(), null, null, credentialsId)),
 						branchSpecs, false, Collections.<SubmoduleConfig>emptyList(), null, null,
