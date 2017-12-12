@@ -194,6 +194,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 			if (imageStreamWatcher != null) {
 				imageStreamWatcher.stop();
 			}
+			if (secretWatcher != null) {
+			    secretWatcher.stop();
+			}
 			OpenShiftUtils.shutdownOpenShiftClient();
 			return;
 		}
@@ -233,6 +236,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 					configMapWatcher.start();
 					imageStreamWatcher = new ImageStreamWatcher(namespaces);
 					imageStreamWatcher.start();
+					secretWatcher = new SecretWatcher(namespaces);
+					secretWatcher.start();
 				}
 			};
 			// lets give jenkins a while to get started ;)

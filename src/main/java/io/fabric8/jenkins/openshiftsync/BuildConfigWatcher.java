@@ -448,6 +448,10 @@ public class BuildConfigWatcher extends BaseWatcher implements
                                 return null;
                             }
                         });
+                // if the bc has a source secret it is possible it should 
+                // be deleted as well (called function will cross reference
+                // with secret watch)
+                CredentialsUtils.deleteSourceCredentials(buildConfig);
             }
 
         }

@@ -20,57 +20,48 @@ import hudson.triggers.SafeTimerTask;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretList;
-import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
-import jenkins.util.Timer;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
-import static java.net.HttpURLConnection.HTTP_GONE;
 import static java.util.logging.Level.SEVERE;
 
 /**
  * Watches {@link Secret} objects in Kubernetes and syncs then to Credentials in
  * Jenkins
  */
-public class SecretWatcher implements Watcher<Secret> {
-    private static final String LABEL_JENKINS = "jenkins";
-    private static final String VALUE_SYNC = "sync";
+public class SecretWatcher extends BaseWatcher implements Watcher<Secret> {
+    private Map<String, String> trackedSecrets;
 
     private final Logger logger = Logger.getLogger(getClass().getName());
-    private final String[] namespaces;
-    private Watch secretWatch;
-    private ScheduledFuture relister;
 
+    @SuppressFBWarnings("EI_EXPOSE_REP2")
     public SecretWatcher(String[] namespaces) {
-        this.namespaces = namespaces;
+        super(namespaces);
+        this.trackedSecrets = new ConcurrentHashMap<String, String>();
     }
 
-    public synchronized void start() {
-        // lets process the initial state
-        logger.info("Now handling startup secrets!!");
-        // lets do this in a background thread to avoid errors like:
-        // Tried proxying
-        // io.fabric8.jenkins.openshiftsync.GlobalPluginConfiguration to
-        // support a circular dependency, but it is not an interface.
-        Runnable task = new SafeTimerTask() {
+    @Override
+    public Runnable getStartTimerTask() {
+        return new SafeTimerTask() {
             @Override
             public void doRun() {
+                if (!CredentialsUtils.hasCredentials()) {
+                    logger.fine("No Openshift Token credential defined.");
+                    return;
+                }
                 for (String namespace : namespaces) {
                     SecretList secrets = null;
                     try {
                         logger.fine("listing Secrets resources");
                         secrets = getAuthenticatedOpenShiftClient().secrets()
                                 .inNamespace(namespace)
-                                .withLabel(LABEL_JENKINS, VALUE_SYNC).list();
+                                .withLabel(Constants.OPENSHIFT_LABELS_SECRET_CREDENTIAL_SYNC, Constants.VALUE_SECRET_SYNC).list();
                         onInitialSecrets(secrets);
                         logger.fine("handled Secrets resources");
                     } catch (Exception e) {
@@ -84,12 +75,20 @@ public class SecretWatcher implements Watcher<Secret> {
                             resourceVersion = secrets.getMetadata()
                                     .getResourceVersion();
                         }
-                        if (secretWatch == null) {
-                            secretWatch = getOpenShiftClient().secrets()
-                                    .inNamespace(namespace)
-                                    .withLabel(LABEL_JENKINS, VALUE_SYNC)
-                                    .withResourceVersion(resourceVersion)
-                                    .watch(SecretWatcher.this);
+                        if (watches.get(namespace) == null) {
+                            logger.info("creating Secret watch for namespace "
+                                    + namespace + " and resource version"
+                                    + resourceVersion);
+                            watches.put(
+                                    namespace,
+                                    getAuthenticatedOpenShiftClient()
+                                            .secrets()
+                                            .inNamespace(namespace)
+                                            .withLabel(Constants.OPENSHIFT_LABELS_SECRET_CREDENTIAL_SYNC,
+                                                    Constants.VALUE_SECRET_SYNC)
+                                            .withResourceVersion(
+                                                    resourceVersion)
+                                            .watch(SecretWatcher.this));
                         }
                     } catch (Exception e) {
                         logger.log(SEVERE, "Failed to load Secrets: " + e, e);
@@ -98,39 +97,28 @@ public class SecretWatcher implements Watcher<Secret> {
 
             }
         };
-        relister = Timer.get().scheduleAtFixedRate(task, 100, 10 * 1000,
-                TimeUnit.MILLISECONDS);
     }
 
-    public synchronized void stop() {
-        if (relister != null && !relister.isDone()) {
-            relister.cancel(true);
-            relister = null;
-        }
-        if (secretWatch != null) {
-            secretWatch.close();
-            secretWatch = null;
-        }
-    }
-
-    @Override
-    public synchronized void onClose(KubernetesClientException e) {
-        if (e != null) {
-            logger.warning(e.toString());
-
-            if (e.getStatus() != null && e.getStatus().getCode() == HTTP_GONE) {
-                stop();
-                start();
-            }
-        }
+    public synchronized void start() {
+        // lets process the initial state
+        super.start();
+        logger.info("Now handling startup secrets!!");
     }
 
     private synchronized void onInitialSecrets(SecretList secrets) {
+        if (secrets == null)
+            return;
+        if (trackedSecrets == null)
+            trackedSecrets = new ConcurrentHashMap<String, String>();
         List<Secret> items = secrets.getItems();
         if (items != null) {
             for (Secret secret : items) {
                 try {
-                    upsertCredential(secret);
+                    if (validSecret(secret) && shouldProcessSecret(secret)) {
+                        upsertCredential(secret);
+                        trackedSecrets.put(secret.getMetadata().getUid(),
+                                secret.getMetadata().getResourceVersion());
+                    }
                 } catch (Exception e) {
                     logger.log(SEVERE, "Failed to update job", e);
                 }
@@ -152,6 +140,10 @@ public class SecretWatcher implements Watcher<Secret> {
             case MODIFIED:
                 modifyCredential(secret);
                 break;
+            default:
+                if (logger.isLoggable(Level.FINE))
+                    logger.fine("got event " + action + " for secret " + secret);
+                break;
             }
         } catch (Exception e) {
             logger.log(Level.WARNING, "Caught: " + e, e);
@@ -159,32 +151,44 @@ public class SecretWatcher implements Watcher<Secret> {
     }
 
     private void upsertCredential(final Secret secret) throws Exception {
-        if (isJenkinsSecret(secret)) {
+        if (validSecret(secret)) {
             CredentialsUtils.upsertCredential(secret);
+            trackedSecrets.put(secret.getMetadata().getUid(), secret
+                    .getMetadata().getResourceVersion());
         }
     }
 
     private void modifyCredential(Secret secret) throws Exception {
-        if (isJenkinsSecret(secret)) {
-            upsertCredential(secret);
-            return;
+        if (validSecret(secret) && shouldProcessSecret(secret)) {
+            CredentialsUtils.upsertCredential(secret);
+            trackedSecrets.put(secret.getMetadata().getUid(), secret
+                    .getMetadata().getResourceVersion());
         }
-
-        // no longer a Jenkins build so lets delete it if it exists
-        deleteCredential(secret);
     }
 
-    private static boolean isJenkinsSecret(Secret secret) {
+    private boolean validSecret(Secret secret) {
         ObjectMeta metadata = secret.getMetadata();
         if (metadata != null) {
             String name = metadata.getName();
-            return name != null && !name.isEmpty();
+            String namespace = metadata.getNamespace();
+            return name != null && !name.isEmpty() && namespace != null
+                    && !namespace.isEmpty();
         }
         return false;
     }
 
-    private void deleteCredential(final Secret secret) throws Exception {
-        // TODO should we delete credentials?
-        // if we do then we should update BuildConfigWatcher to do the same
+    private boolean shouldProcessSecret(Secret secret) {
+        String uid = secret.getMetadata().getUid();
+        String rv = secret.getMetadata().getResourceVersion();
+        String savedRV = trackedSecrets.get(uid);
+        if (savedRV == null || !savedRV.equals(rv))
+            return true;
+        return false;
     }
+
+    private void deleteCredential(final Secret secret) throws Exception {
+        trackedSecrets.remove(secret.getMetadata().getUid());
+        CredentialsUtils.deleteCredential(secret);
+    }
+
 }
