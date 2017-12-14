@@ -5,17 +5,21 @@ import com.cloudbees.plugins.credentials.*;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
+
+import hudson.model.Fingerprint;
 import hudson.remoting.Base64;
 import hudson.security.ACL;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.openshift.api.model.BuildConfig;
 import jenkins.model.Jenkins;
+
 import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Map;
@@ -29,146 +33,269 @@ import static org.apache.commons.lang.StringUtils.isNotBlank;
 
 public class CredentialsUtils {
 
-	private final static Logger logger = Logger.getLogger(CredentialsUtils.class.getName());
+    private final static Logger logger = Logger
+            .getLogger(CredentialsUtils.class.getName());
+    
+    public static synchronized Secret getSourceCredentials(
+            BuildConfig buildConfig) {
+        if (buildConfig.getSpec() != null
+                && buildConfig.getSpec().getSource() != null
+                && buildConfig.getSpec().getSource().getSourceSecret() != null
+                && !buildConfig.getSpec().getSource().getSourceSecret()
+                        .getName().isEmpty()) {
+            Secret sourceSecret = getAuthenticatedOpenShiftClient()
+                    .secrets()
+                    .inNamespace(buildConfig.getMetadata().getNamespace())
+                    .withName(
+                            buildConfig.getSpec().getSource().getSourceSecret()
+                                    .getName()).get();
+            return sourceSecret;
+        }
+        return null;
+    }
 
-	public static synchronized String updateSourceCredentials(BuildConfig buildConfig) throws IOException {
-		if (buildConfig.getSpec() != null && buildConfig.getSpec().getSource() != null
-				&& buildConfig.getSpec().getSource().getSourceSecret() != null
-				&& !buildConfig.getSpec().getSource().getSourceSecret().getName().isEmpty()) {
-			String secretName = buildConfig.getSpec().getSource().getSourceSecret().getName();
-			String namespace = buildConfig.getMetadata().getNamespace();
-			Secret sourceSecret = getAuthenticatedOpenShiftClient().secrets()
-					.inNamespace(buildConfig.getMetadata().getNamespace())
-					.withName(buildConfig.getSpec().getSource().getSourceSecret().getName()).get();
-			return upsertCredential(sourceSecret, namespace, secretName);
+    public static synchronized String updateSourceCredentials(
+            BuildConfig buildConfig) throws IOException {
+        Secret sourceSecret = getSourceCredentials(buildConfig);
+        String credID = null;
+        if (sourceSecret != null) {
+            credID = upsertCredential(sourceSecret, sourceSecret
+                    .getMetadata().getNamespace(), sourceSecret.getMetadata()
+                    .getName());
+            if (credID != null)
+                BuildConfigSecretToCredentialsMap.linkBCSecretToCredential(
+                    NamespaceName.create(buildConfig).toString(), credID);
 
-		}
-		return null;
-	}
+        } else {
+            // call delete and remove any credential that fits the
+            // project/bcname pattern
+            credID = BuildConfigSecretToCredentialsMap
+                    .unlinkBCSecretToCrendential(NamespaceName.create(
+                            buildConfig).toString());
+            if (credID != null)
+                deleteCredential(credID, NamespaceName.create(buildConfig),
+                        buildConfig.getMetadata().getResourceVersion());
+        }
+        return credID;
+    }
 
-	/**
-	 * Inserts or creates a Jenkins Credential for the given Secret
-	 */
-	public static synchronized String upsertCredential(Secret secret) throws IOException {
-		if (secret != null) {
-			ObjectMeta metadata = secret.getMetadata();
-			if (metadata != null) {
-				return upsertCredential(secret, metadata.getNamespace(), metadata.getName());
-			}
-		}
-		return null;
-	}
+    public static synchronized void deleteSourceCredentials(
+            BuildConfig buildConfig) throws IOException {
+        Secret sourceSecret = getSourceCredentials(buildConfig);
+        if (sourceSecret != null) {
+            String labelValue = sourceSecret.getMetadata().getLabels()
+                    .get(Constants.OPENSHIFT_LABELS_SECRET_CREDENTIAL_SYNC);
+            boolean watching = labelValue != null
+                    && labelValue.equalsIgnoreCase(Constants.VALUE_SECRET_SYNC);
+            // for a bc delete, if we are watching this secret, do not delete
+            // credential until secret is actually deleted
+            if (watching)
+                return;
+            deleteCredential(sourceSecret);
+        }
+    }
 
-	private static String upsertCredential(Secret secret, String namespace, String secretName) throws IOException {
-		String id = null;
-		if (secret != null) {
-			Credentials creds = secretToCredentials(secret);
-			id = secretName(namespace, secretName);
-			Credentials existingCreds = lookupCredentials(id);
-			final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
-			try {
-				CredentialsStore s = CredentialsProvider.lookupStores(Jenkins.getActiveInstance()).iterator().next();
-				if (existingCreds != null) {
-					s.updateCredentials(Domain.global(), existingCreds, creds);
-				} else {
-					s.addCredentials(Domain.global(), creds);
-				}
-			} finally {
-				SecurityContextHolder.setContext(previousContext);
-			}
-		}
-		return id;
-	}
+    /**
+     * Inserts or creates a Jenkins Credential for the given Secret
+     */
+    public static synchronized String upsertCredential(Secret secret)
+            throws IOException {
+        if (secret != null) {
+            ObjectMeta metadata = secret.getMetadata();
+            if (metadata != null) {
+                return upsertCredential(secret, metadata.getNamespace(),
+                        metadata.getName());
+            }
+        }
+        return null;
+    }
 
-	// getCurrentToken returns the ServiceAccount token currently selected by
-	// the user. A return value of empty string
-	// implies no token is configured.
-	public static String getCurrentToken() {
-		String credentialsId = GlobalPluginConfiguration.get().getCredentialsId();
-		if (credentialsId.equals("")) {
-			return "";
-		}
+    private static String upsertCredential(Secret secret, String namespace,
+            String secretName) throws IOException {
+        String id = null;
+        if (secret != null) {
+            Credentials creds = secretToCredentials(secret);
+            if (creds == null)
+                return null;
+            id = secretName(namespace, secretName);
+            Credentials existingCreds = lookupCredentials(id);
+            final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
+            try {
+                CredentialsStore s = CredentialsProvider
+                        .lookupStores(Jenkins.getActiveInstance()).iterator()
+                        .next();
+                if (existingCreds != null) {
+                    s.updateCredentials(Domain.global(), existingCreds, creds);
+                    logger.info("Updated credential " + id + " from Secret "
+                            + NamespaceName.create(secret) + " with revision: "
+                            + secret.getMetadata().getResourceVersion());
+                } else {
+                    s.addCredentials(Domain.global(), creds);
+                    logger.info("Created credential " + id + " from Secret "
+                            + NamespaceName.create(secret) + " with revision: "
+                            + secret.getMetadata().getResourceVersion());
+                }
+                s.save();
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
+            }
+        }
+        return id;
+    }
+    
+    private static void deleteCredential(String id, NamespaceName name,
+            String resourceRevision) throws IOException {
+        Credentials existingCred = lookupCredentials(id);
+        if (existingCred != null) {
+            final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
+            try {
+                Fingerprint fp = CredentialsProvider
+                        .getFingerprintOf(existingCred);
+                if (fp != null && fp.getJobs().size() > 0) {
+                    // per messages in credentials console, it is not a given,
+                    // but
+                    // it is possible for job refs to a credential to be
+                    // tracked;
+                    // if so, we will not prevent deletion, but at least note
+                    // things
+                    // for potential diagnostics
+                    StringBuffer sb = new StringBuffer();
+                    for (String job : fp.getJobs())
+                        sb.append(job).append(" ");
+                    logger.info("About to delete credential " + id
+                            + "which is referenced by jobs: " + sb.toString());
+                }
+                CredentialsStore s = CredentialsProvider
+                        .lookupStores(Jenkins.getActiveInstance()).iterator()
+                        .next();
+                s.removeCredentials(Domain.global(), existingCred);
+                logger.info("Deleted credential " + id + " from Secret " + name
+                        + " with revision: " + resourceRevision);
+                s.save();
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
+            }
+        }
+    }
 
-		OpenShiftToken token = CredentialsMatchers
-				.firstOrNull(
-						CredentialsProvider.lookupCredentials(OpenShiftToken.class, Jenkins.getActiveInstance(),
-								ACL.SYSTEM, Collections.<DomainRequirement>emptyList()),
-						CredentialsMatchers.withId(credentialsId));
+    public static void deleteCredential(Secret secret) throws IOException {
+        if (secret != null) {
+            String id = secretName(secret.getMetadata().getNamespace(), secret
+                    .getMetadata().getName());
+            deleteCredential(id, NamespaceName.create(secret), secret
+                    .getMetadata().getResourceVersion());
+        }
+    }
 
-		if (token != null) {
-			return token.getToken();
-		}
+    // getCurrentToken returns the ServiceAccount token currently selected by
+    // the user. A return value of empty string
+    // implies no token is configured.
+    public static String getCurrentToken() {
+        String credentialsId = GlobalPluginConfiguration.get()
+                .getCredentialsId();
+        if (credentialsId.equals("")) {
+            return "";
+        }
 
-		return "";
-	}
+        OpenShiftToken token = CredentialsMatchers.firstOrNull(
+                CredentialsProvider.lookupCredentials(OpenShiftToken.class,
+                        Jenkins.getActiveInstance(), ACL.SYSTEM,
+                        Collections.<DomainRequirement> emptyList()),
+                CredentialsMatchers.withId(credentialsId));
 
-	private static Credentials lookupCredentials(String id) {
-		return CredentialsMatchers
-				.firstOrNull(
-						CredentialsProvider.lookupCredentials(Credentials.class, Jenkins.getActiveInstance(),
-								ACL.SYSTEM, Collections.<DomainRequirement>emptyList()),
-						CredentialsMatchers.withId(id));
-	}
+        if (token != null) {
+            return token.getToken();
+        }
 
-	private static String secretName(String namespace, String name) {
-		return namespace + "-" + name;
-	}
+        return "";
+    }
 
-	private static Credentials secretToCredentials(Secret secret) {
-		String namespace = secret.getMetadata().getNamespace();
-		String name = secret.getMetadata().getName();
-		final Map<String, String> data = secret.getData();
-		final String secretName = secretName(namespace, name);
-		switch (secret.getType()) {
-		case OPENSHIFT_SECRETS_TYPE_OPAQUE:
-			String usernameData = data.get(OPENSHIFT_SECRETS_DATA_USERNAME);
-			String passwordData = data.get(OPENSHIFT_SECRETS_DATA_PASSWORD);
-			if (isNotBlank(usernameData) && isNotBlank(passwordData)) {
-				return newUsernamePasswordCredentials(secretName, usernameData, passwordData);
-			}
-			String sshKeyData = data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY);
-			if (isNotBlank(sshKeyData)) {
-				return newSSHUserCredential(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME), sshKeyData);
-			}
+    private static Credentials lookupCredentials(String id) {
+        return CredentialsMatchers.firstOrNull(CredentialsProvider
+                .lookupCredentials(Credentials.class,
+                        Jenkins.getActiveInstance(), ACL.SYSTEM,
+                        Collections.<DomainRequirement> emptyList()),
+                CredentialsMatchers.withId(id));
+    }
 
-			logger.log(Level.WARNING,
-					"Opaque secret either requires {0} and {1} fields for basic auth or {2} field for SSH key",
-					new Object[] { OPENSHIFT_SECRETS_DATA_USERNAME, OPENSHIFT_SECRETS_DATA_PASSWORD,
-							OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY });
-			return null;
-		case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
-			return newUsernamePasswordCredentials(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
-					data.get(OPENSHIFT_SECRETS_DATA_PASSWORD));
-		case OPENSHIFT_SECRETS_TYPE_SSH:
-			return newSSHUserCredential(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
-					data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY));
-		default:
-			logger.log(Level.WARNING, "Unknown secret type: " + secret.getType());
-			return null;
-		}
-	}
+    private static String secretName(String namespace, String name) {
+        return namespace + "-" + name;
+    }
 
-	private static Credentials newSSHUserCredential(String secretName, String username, String sshKeyData) {
-		return new BasicSSHUserPrivateKey(CredentialsScope.GLOBAL, secretName, fixNull(username),
-				new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
-						new String(Base64.decode(sshKeyData), StandardCharsets.UTF_8)),
-				null, secretName);
-	}
+    private static Credentials secretToCredentials(Secret secret) {
+        String namespace = secret.getMetadata().getNamespace();
+        String name = secret.getMetadata().getName();
+        final Map<String, String> data = secret.getData();
 
-	private static Credentials newUsernamePasswordCredentials(String secretName, String usernameData,
-			String passwordData) {
-		return new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName,
-				new String(Base64.decode(usernameData), StandardCharsets.UTF_8),
-				new String(Base64.decode(passwordData), StandardCharsets.UTF_8));
-	}
+        if (data == null) {
+            logger.log(
+                    Level.WARNING,
+                    "An OpenShift secret was marked for import, but it has no secret data.  No credential will be created.");
+            return null;
+        }
 
-	/**
-	 * Does our configuration have credentials?
-	 * 
-	 * @return true if found.
-	 */
-	public static boolean hasCredentials() {
-		return !StringUtils.isEmpty(getAuthenticatedOpenShiftClient().getConfiguration().getOauthToken());
-	}
+        final String secretName = secretName(namespace, name);
+        switch (secret.getType()) {
+        case OPENSHIFT_SECRETS_TYPE_OPAQUE:
+            String usernameData = data.get(OPENSHIFT_SECRETS_DATA_USERNAME);
+            String passwordData = data.get(OPENSHIFT_SECRETS_DATA_PASSWORD);
+            if (isNotBlank(usernameData) && isNotBlank(passwordData)) {
+                return newUsernamePasswordCredentials(secretName, usernameData,
+                        passwordData);
+            }
+            String sshKeyData = data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY);
+            if (isNotBlank(sshKeyData)) {
+                return newSSHUserCredential(secretName,
+                        data.get(OPENSHIFT_SECRETS_DATA_USERNAME), sshKeyData);
+            }
+
+            logger.log(
+                    Level.WARNING,
+                    "Opaque secret either requires {0} and {1} fields for basic auth or {2} field for SSH key",
+                    new Object[] { OPENSHIFT_SECRETS_DATA_USERNAME,
+                            OPENSHIFT_SECRETS_DATA_PASSWORD,
+                            OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY });
+            return null;
+        case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
+            return newUsernamePasswordCredentials(secretName,
+                    data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
+                    data.get(OPENSHIFT_SECRETS_DATA_PASSWORD));
+        case OPENSHIFT_SECRETS_TYPE_SSH:
+            return newSSHUserCredential(secretName,
+                    data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
+                    data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY));
+        default:
+            logger.log(Level.WARNING,
+                    "Unknown secret type: " + secret.getType());
+            return null;
+        }
+    }
+
+    private static Credentials newSSHUserCredential(String secretName,
+            String username, String sshKeyData) {
+        return new BasicSSHUserPrivateKey(CredentialsScope.GLOBAL, secretName,
+                fixNull(username),
+                new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
+                        new String(Base64.decode(sshKeyData),
+                                StandardCharsets.UTF_8)), null, secretName);
+    }
+
+    private static Credentials newUsernamePasswordCredentials(
+            String secretName, String usernameData, String passwordData) {
+        return new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL,
+                secretName, secretName, new String(Base64.decode(usernameData),
+                        StandardCharsets.UTF_8), new String(
+                        Base64.decode(passwordData), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Does our configuration have credentials?
+     * 
+     * @return true if found.
+     */
+    public static boolean hasCredentials() {
+        return !StringUtils.isEmpty(getAuthenticatedOpenShiftClient()
+                .getConfiguration().getOauthToken());
+    }
 
 }
