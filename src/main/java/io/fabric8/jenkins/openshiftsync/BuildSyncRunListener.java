@@ -208,14 +208,26 @@ public class BuildSyncRunListener extends RunListener<Run> {
         
         // try blue run
 		BlueRun blueRun = null;
-        ExtensionList<BlueRunFactory> facts = BlueRunFactory.all();
-        for (BlueRunFactory fact : facts) {
-            blueRun = fact.getRun(run, null);
-            if (blueRun != null) {
-                break;
-            }
-            
-        }
+		try {
+		    // looks like they've moved api again with v1.3.5 and commit
+		    // https://github.com/jenkinsci/blueocean-plugin/commit/4cefa8d4a94bb513d252e436ae8228f809368209#diff-de2c99c1b83fcb1b1ab54d48ce956026
+		    // there appears to be a BlueRunFactory.getRun at that level
+		    //TODO replace when we bump blue ocean
+	        ExtensionList<BlueRunFactory> facts = BlueRunFactory.all();
+	        for (BlueRunFactory fact : facts) {
+	            blueRun = fact.getRun(run, null);
+	            if (blueRun != null) {
+	                break;
+	            }
+	            
+	        }
+		} catch (Throwable t) {
+		    // use of info is intentional ... in case the blue ocean deps get bumped
+		    // by another dependency vs. our bumping it explicitly, I want to
+		    // find out quickly that we need to switch to the new method noted 
+		    // above
+		    logger.log(Level.WARNING, "pollRun", t);
+		}
 
 		try {
 			upsertBuild(run, wfRunExt, blueRun);
