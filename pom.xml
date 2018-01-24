@@ -116,7 +116,7 @@
     <dependency>
        <groupId>io.jenkins.blueocean</groupId>
        <artifactId>blueocean-rest</artifactId>
-       <version>1.1.6</version>
+       <version>1.4.0</version>
     </dependency>
 
     <dependency>
