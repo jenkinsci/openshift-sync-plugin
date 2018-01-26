@@ -25,7 +25,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import hudson.Extension;
-import hudson.ExtensionList;
 import hudson.PluginManager;
 import hudson.model.Result;
 import hudson.model.Run;
@@ -329,7 +328,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
 		}
 		int newNumStages = wfRunExt.getStages().size();
 		int newNumFlowNodes = 0;
-		Map<String,StageNodeExt> validStages = new HashMap<String,StageNodeExt>();
+		List<StageNodeExt> validStageList = new ArrayList<StageNodeExt>();
         for (StageNodeExt stage : wfRunExt.getStages()) {
             // the StatusExt.getStatus() cannot be trusted for declarative
             // pipeline;
@@ -344,7 +343,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
                         + " because it was not executed (most likely because of a failure in another stage)");
                 continue;
             }
-            validStages.put(stage.getName(), stage);
+            validStageList.add(stage);
 
             FlowNodeExt.FlowNodeLinks links = stage.get_links();
             if (!links.self.href.matches("^https?://.*$")) {
@@ -375,7 +374,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
             }
         }
 		// override stages in case declarative has fooled base pipeline support
-		wfRunExt.setStages(new ArrayList<StageNodeExt>(validStages.values()));
+		wfRunExt.setStages(validStageList);
 		
 		boolean needToUpdate = this.shouldUpdateOpenShiftBuild(cause, newNumStages, newNumFlowNodes,
 				wfRunExt.getStatus());
