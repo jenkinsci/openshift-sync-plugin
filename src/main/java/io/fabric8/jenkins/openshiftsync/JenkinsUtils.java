@@ -75,6 +75,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.putJobWithBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
@@ -113,10 +114,35 @@ public class JenkinsUtils {
 		}
 		return root;
 	}
+	
+	public static boolean verifyEnvVars(Map<String, ParameterDefinition> paramMap, WorkflowJob workflowJob) {
+        if (paramMap != null) {
+            String fullName = workflowJob.getFullName();
+            WorkflowJob job = Jenkins.getActiveInstance()
+                    .getItemByFullName(fullName,
+                            WorkflowJob.class);
+            if (job == null) {
+                // this should not occur if an impersonate call has been made higher up
+                // the stack
+                LOGGER.warning("A run of workflow job " + workflowJob.getName() + " unexpectantly not saved to disk.");
+                return false;
+            }
+            ParametersDefinitionProperty props = job.getProperty(ParametersDefinitionProperty.class);
+            List<String> names = props.getParameterDefinitionNames();
+            for (String name : names) {
+                if (!paramMap.containsKey(name)) {
+                    LOGGER.warning("A run of workflow job " + job.getName() + " was expecting parameter " + name + ", but it is not in the parameter list");
+                    return false;
+                }
+            }
+        }
+	    return true;
+	}
 
-	public static void addJobParamForBuildEnvs(WorkflowJob job, JenkinsPipelineBuildStrategy strat,
+	public static Map<String, ParameterDefinition> addJobParamForBuildEnvs(WorkflowJob job, JenkinsPipelineBuildStrategy strat,
 			boolean replaceExisting) throws IOException {
 		List<EnvVar> envs = strat.getEnv();
+        Map<String, ParameterDefinition> paramMap = null;
 		if (envs.size() > 0) {
 			// build list of current env var names for possible deletion of env
 			// vars currently stored
@@ -128,7 +154,7 @@ public class JenkinsUtils {
 			// get existing property defs, including any manually added from the
 			// jenkins console independent of BC
 			ParametersDefinitionProperty params = job.removeProperty(ParametersDefinitionProperty.class);
-			Map<String, ParameterDefinition> paramMap = new HashMap<String, ParameterDefinition>();
+			paramMap = new HashMap<String, ParameterDefinition>();
 			// store any existing parameters in map for easy key lookup
 			if (params != null) {
 				List<ParameterDefinition> existingParamList = params.getParameterDefinitions();
@@ -161,6 +187,9 @@ public class JenkinsUtils {
 			List<ParameterDefinition> newParamList = new ArrayList<ParameterDefinition>(paramMap.values());
 			job.addProperty(new ParametersDefinitionProperty(newParamList));
 		}
+		// force save here ... seen some timing issues with concurrent job updates and run initiations
+		job.save();
+		return paramMap;
 	}
 
 	public static List<Action> setJobRunParamsFromEnv(WorkflowJob job, JenkinsPipelineBuildStrategy strat,
@@ -268,125 +297,141 @@ public class JenkinsUtils {
 		return buildActions;
 	}
 
-	public static boolean triggerJob(WorkflowJob job, Build build) throws IOException {
-		if (isAlreadyTriggered(job, build)) {
-			return false;
-		}
+    public static boolean triggerJob(WorkflowJob job, Build build)
+            throws IOException {
+        if (isAlreadyTriggered(job, build)) {
+            return false;
+        }
 
-		String buildConfigName = build.getStatus().getConfig().getName();
-		if (isBlank(buildConfigName)) {
-			return false;
-		}
+        String buildConfigName = build.getStatus().getConfig().getName();
+        if (isBlank(buildConfigName)) {
+            return false;
+        }
 
-        BuildConfigProjectProperty bcProp = job.getProperty(BuildConfigProjectProperty.class);
+        BuildConfigProjectProperty bcProp = job
+                .getProperty(BuildConfigProjectProperty.class);
         if (bcProp == null || bcProp.getBuildRunPolicy() == null) {
-            LOGGER.warning("aborting trigger of build " + build + "because of missing bc project property or run policy");
-			return false;
-		}
+            LOGGER.warning("aborting trigger of build " + build
+                    + "because of missing bc project property or run policy");
+            return false;
+        }
 
-		switch (bcProp.getBuildRunPolicy()) {
-		case SERIAL_LATEST_ONLY:
-			cancelQueuedBuilds(job, bcProp.getUid());
-			if (job.isBuilding()) {
-				return false;
-			}
-			break;
-		case SERIAL:
-			if (job.isInQueue() || job.isBuilding()) {
-				return false;
-			}
-			break;
-		default:
-		}
+        switch (bcProp.getBuildRunPolicy()) {
+        case SERIAL_LATEST_ONLY:
+            cancelQueuedBuilds(job, bcProp.getUid());
+            if (job.isBuilding()) {
+                return false;
+            }
+            break;
+        case SERIAL:
+            if (job.isInQueue() || job.isBuilding()) {
+                return false;
+            }
+            break;
+        default:
+        }
 
-		ObjectMeta meta = build.getMetadata();
-		String namespace = meta.getNamespace();
-		BuildConfig buildConfig = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace)
-				.withName(buildConfigName).get();
-		if (buildConfig == null) {
-			return false;
-		}
+        ObjectMeta meta = build.getMetadata();
+        String namespace = meta.getNamespace();
+        BuildConfig buildConfig = getAuthenticatedOpenShiftClient()
+                .buildConfigs().inNamespace(namespace)
+                .withName(buildConfigName).get();
+        if (buildConfig == null) {
+            return false;
+        }
 
-		// sync on intern of name should guarantee sync on same actual obj
-		synchronized (buildConfig.getMetadata().getUid().intern()) {
-			updateSourceCredentials(buildConfig);
+        // sync on intern of name should guarantee sync on same actual obj
+        synchronized (buildConfig.getMetadata().getUid().intern()) {
+            updateSourceCredentials(buildConfig);
 
-			// We need to ensure that we do not remove
-			// existing Causes from a Run since other
-			// plugins may rely on them.
-			List<Cause> newCauses = new ArrayList<>();
-			newCauses.add(new BuildCause(build, bcProp.getUid()));
-			CauseAction originalCauseAction = BuildToActionMapper.removeCauseAction(build.getMetadata().getName());
-			if (originalCauseAction != null) {
-				if (LOGGER.isLoggable(Level.FINE)) {
-					LOGGER.fine("Adding existing causes...");
-					for (Cause c : originalCauseAction.getCauses()) {
-						LOGGER.fine("orginal cause: " + c.getShortDescription());
-					}
-				}
-				newCauses.addAll(originalCauseAction.getCauses());
-				if (LOGGER.isLoggable(Level.FINE)) {
-					for (Cause c : newCauses) {
-						LOGGER.fine("new cause: " + c.getShortDescription());
-					}
-				}
-			}
+            // We need to ensure that we do not remove
+            // existing Causes from a Run since other
+            // plugins may rely on them.
+            List<Cause> newCauses = new ArrayList<>();
+            newCauses.add(new BuildCause(build, bcProp.getUid()));
+            CauseAction originalCauseAction = BuildToActionMapper
+                    .removeCauseAction(build.getMetadata().getName());
+            if (originalCauseAction != null) {
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    LOGGER.fine("Adding existing causes...");
+                    for (Cause c : originalCauseAction.getCauses()) {
+                        LOGGER.fine("orginal cause: " + c.getShortDescription());
+                    }
+                }
+                newCauses.addAll(originalCauseAction.getCauses());
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    for (Cause c : newCauses) {
+                        LOGGER.fine("new cause: " + c.getShortDescription());
+                    }
+                }
+            }
 
-			List<Action> buildActions = new ArrayList<>();
-			CauseAction bCauseAction = new CauseAction(newCauses);
-			buildActions.add(bCauseAction);
+            List<Action> buildActions = new ArrayList<>();
+            CauseAction bCauseAction = new CauseAction(newCauses);
+            buildActions.add(bCauseAction);
 
-			GitBuildSource gitBuildSource = build.getSpec().getSource().getGit();
-			SourceRevision sourceRevision = build.getSpec().getRevision();
+            GitBuildSource gitBuildSource = build.getSpec().getSource()
+                    .getGit();
+            SourceRevision sourceRevision = build.getSpec().getRevision();
 
-			if (gitBuildSource != null && sourceRevision != null) {
-				GitSourceRevision gitSourceRevision = sourceRevision.getGit();
-				if (gitSourceRevision != null) {
-					try {
-						URIish repoURL = new URIish(gitBuildSource.getUri());
-						buildActions.add(new RevisionParameterAction(gitSourceRevision.getCommit(), repoURL));
-					} catch (URISyntaxException e) {
-						LOGGER.log(SEVERE, "Failed to parse git repo URL" + gitBuildSource.getUri(), e);
-					}
-				}
-			}
+            if (gitBuildSource != null && sourceRevision != null) {
+                GitSourceRevision gitSourceRevision = sourceRevision.getGit();
+                if (gitSourceRevision != null) {
+                    try {
+                        URIish repoURL = new URIish(gitBuildSource.getUri());
+                        buildActions.add(new RevisionParameterAction(
+                                gitSourceRevision.getCommit(), repoURL));
+                    } catch (URISyntaxException e) {
+                        LOGGER.log(SEVERE, "Failed to parse git repo URL"
+                                + gitBuildSource.getUri(), e);
+                    }
+                }
+            }
 
-			ParametersAction userProvidedParams = BuildToActionMapper
-					.removeParameterAction(build.getMetadata().getName());
-			// grab envs from actual build in case user overrode default values
-			// via `oc start-build -e`
-			JenkinsPipelineBuildStrategy strat = build.getSpec().getStrategy().getJenkinsPipelineStrategy();
-			// only add new param defs for build envs which are not in build
-			// config envs
-			addJobParamForBuildEnvs(job, strat, false);
-			if (userProvidedParams == null) {
-				LOGGER.fine("setting all job run params since this was either started via oc, or started from the UI "
-						+ "with no build parameters");
-				// now add the actual param values stemming from openshift build
-				// env vars for this specific job
-				buildActions = setJobRunParamsFromEnv(job, strat, buildActions);
-			} else {
-				LOGGER.fine("setting job run params and since this is manually started from jenkins applying user "
-						+ "provided parameters " + userProvidedParams + " along with any from bc's env vars");
-				buildActions = setJobRunParamsFromEnvAndUIParams(job, strat, buildActions, userProvidedParams);
-			}
+            ParametersAction userProvidedParams = BuildToActionMapper
+                    .removeParameterAction(build.getMetadata().getName());
+            // grab envs from actual build in case user overrode default values
+            // via `oc start-build -e`
+            JenkinsPipelineBuildStrategy strat = build.getSpec().getStrategy()
+                    .getJenkinsPipelineStrategy();
+            // only add new param defs for build envs which are not in build
+            // config envs
+            Map<String, ParameterDefinition> paramMap = addJobParamForBuildEnvs(
+                    job, strat, false);
+            verifyEnvVars(paramMap, job);
+            if (userProvidedParams == null) {
+                LOGGER.fine("setting all job run params since this was either started via oc, or started from the UI "
+                        + "with no build parameters");
+                // now add the actual param values stemming from openshift build
+                // env vars for this specific job
+                buildActions = setJobRunParamsFromEnv(job, strat, buildActions);
+            } else {
+                LOGGER.fine("setting job run params and since this is manually started from jenkins applying user "
+                        + "provided parameters "
+                        + userProvidedParams
+                        + " along with any from bc's env vars");
+                buildActions = setJobRunParamsFromEnvAndUIParams(job, strat,
+                        buildActions, userProvidedParams);
+            }
+            putJobWithBuildConfig(job, buildConfig);
 
-			if (job.scheduleBuild2(0, buildActions.toArray(new Action[buildActions.size()])) != null) {
-				updateOpenShiftBuildPhase(build, PENDING);
-				// If builds are queued too quickly, Jenkins can add the cause
-				// to the previous queued build so let's add a tiny
-				// sleep.
-				try {
-					Thread.sleep(50l);
-				} catch (InterruptedException e) {
-					// Ignore
-				}
-				return true;
-			}
+            if (job.scheduleBuild2(0,
+                    buildActions.toArray(new Action[buildActions.size()])) != null) {
+                updateOpenShiftBuildPhase(build, PENDING);
+                // If builds are queued too quickly, Jenkins can add the cause
+                // to the previous queued build so let's add a tiny
+                // sleep.
+                try {
+                    Thread.sleep(50l);
+                } catch (InterruptedException e) {
+                    // Ignore
+                }
+                return true;
+            }
 
-			return false;
-		}
-	}
+            return false;
+        }
+    }
 
 	private static boolean isAlreadyTriggered(WorkflowJob job, Build build) {
 		return getRun(job, build) != null;

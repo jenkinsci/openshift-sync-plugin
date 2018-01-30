@@ -20,6 +20,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.BulkChange;
 import hudson.model.ItemGroup;
 import hudson.model.Job;
+import hudson.model.ParameterDefinition;
 import hudson.security.ACL;
 import hudson.triggers.SafeTimerTask;
 import hudson.util.XStream2;
@@ -41,6 +42,7 @@ import javax.xml.transform.stream.StreamSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -160,45 +162,67 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
 				modifyEventToJenkinsJob(buildConfig);
 				break;
 			}
-			// if bc event came after build events, let's
-			// poke the BuildWatcher builds with no BC list to create job
-			// runs
-			BuildWatcher.flushBuildsWithNoBCList();
-            // now, if the build event was lost and never received, builds
-            // will stay in
-            // new for 5 minutes ... let's launch a background thread to
-            // clean them up
-            // at a quicker interval than the default 5 minute general build
-            // relist function
-            if (action == Watcher.Action.ADDED) {
-                Runnable backupBuildQuery = new SafeTimerTask() {
-                    @Override
-                    public void doRun() {
-                        if (!CredentialsUtils.hasCredentials()) {
-                            logger.fine("No Openshift Token credential defined.");
-                            return;
+            // we employ impersonation here to insure we have "full access";
+            // for example, can we actually 
+            // read in jobs defs for verification? without impersonation here
+            // we would get null back when trying to read in the job from disk
+            ACL.impersonate(ACL.SYSTEM,
+                    new NotReallyRoleSensitiveCallable<Void, Exception>() {
+                        @Override
+                        public Void call() throws Exception {
+                            // if bc event came after build events, let's
+                            // poke the BuildWatcher builds with no BC list to
+                            // create job
+                            // runs
+                            BuildWatcher.flushBuildsWithNoBCList();
+                            // now, if the build event was lost and never
+                            // received, builds
+                            // will stay in
+                            // new for 5 minutes ... let's launch a background
+                            // thread to
+                            // clean them up
+                            // at a quicker interval than the default 5 minute
+                            // general build
+                            // relist function
+                            if (action == Watcher.Action.ADDED) {
+                                Runnable backupBuildQuery = new SafeTimerTask() {
+                                    @Override
+                                    public void doRun() {
+                                        if (!CredentialsUtils.hasCredentials()) {
+                                            logger.fine("No Openshift Token credential defined.");
+                                            return;
+                                        }
+                                        BuildList buildList = getAuthenticatedOpenShiftClient()
+                                                .builds()
+                                                .inNamespace(
+                                                        buildConfig
+                                                                .getMetadata()
+                                                                .getNamespace())
+                                                .withField(
+                                                        OPENSHIFT_BUILD_STATUS_FIELD,
+                                                        BuildPhases.NEW)
+                                                .withLabel(
+                                                        OPENSHIFT_LABELS_BUILD_CONFIG_NAME,
+                                                        buildConfig
+                                                                .getMetadata()
+                                                                .getName())
+                                                .list();
+                                        if (buildList.getItems().size() > 0) {
+                                            logger.info("build backup query for "
+                                                    + buildConfig.getMetadata()
+                                                            .getName()
+                                                    + " found new builds");
+                                            BuildWatcher
+                                                    .onInitialBuilds(buildList);
+                                        }
+                                    }
+                                };
+                                Timer.get().schedule(backupBuildQuery,
+                                        10 * 1000, TimeUnit.MILLISECONDS);
+                            }
+                            return null;
                         }
-                        BuildList buildList = getAuthenticatedOpenShiftClient()
-                                .builds()
-                                .inNamespace(
-                                        buildConfig.getMetadata()
-                                                .getNamespace())
-                                .withField(OPENSHIFT_BUILD_STATUS_FIELD,
-                                        BuildPhases.NEW)
-                                .withLabel(OPENSHIFT_LABELS_BUILD_CONFIG_NAME,
-                                        buildConfig.getMetadata().getName())
-                                .list();
-                        if (buildList.getItems().size() > 0) {
-                            logger.info("build backup query for "
-                                    + buildConfig.getMetadata().getName()
-                                    + " found new builds");
-                            BuildWatcher.onInitialBuilds(buildList);
-                        }
-                    }
-                };
-                Timer.get().schedule(backupBuildQuery, 10 * 1000,
-                        TimeUnit.MILLISECONDS);
-            }
+                    });
 		} catch (Exception e) {
 			logger.log(Level.WARNING, "Caught: " + e, e);
 		}
@@ -283,7 +307,7 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
 
 						// (re)populate job param list with any envs
 						// from the build config
-						JenkinsUtils.addJobParamForBuildEnvs(job,
+                                Map<String, ParameterDefinition> paramMap = JenkinsUtils.addJobParamForBuildEnvs(job,
 								buildConfig.getSpec().getStrategy().getJenkinsPipelineStrategy(), true);
 
 						job.setConcurrentBuild(!(buildConfig.getSpec().getRunPolicy().equals(SERIAL)
@@ -333,7 +357,8 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
 							logger.warning("Could not find created job " + fullName + " for BuildConfig: "
 									+ getNamespace(buildConfig) + "/" + getName(buildConfig));
 						} else {
-							putJobWithBuildConfig(workflowJob, buildConfig);
+                                    JenkinsUtils.verifyEnvVars(paramMap, workflowJob);
+                                    putJobWithBuildConfig(workflowJob, buildConfig);
 						}
 						return null;
 					}
