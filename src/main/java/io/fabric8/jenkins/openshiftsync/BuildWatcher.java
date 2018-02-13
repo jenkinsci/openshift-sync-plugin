@@ -24,10 +24,12 @@ import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.BuildStatus;
+import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -45,11 +47,17 @@ import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBui
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_BUILD_NUMBER;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
+
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.cancelBuild;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.deleteRun;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.getJobFromBuild;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.handleBuildList;
 import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.triggerJob;
-import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.*;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isNew;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
 import static java.util.logging.Level.WARNING;
 
 public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
@@ -128,6 +136,7 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
                                 "Failed to load initial Builds: " + e, e);
                     }
                 }
+                reconcileRunsAndBuilds();
             }
         };
     }
@@ -413,4 +422,41 @@ public class BuildWatcher extends BaseWatcher implements Watcher<Build> {
         // clean up
         innerDeleteEventToJenkinsJobRun(build);
     }
+
+  /**
+   * Reconciles Jenkins job runs and OpenShift builds
+   *
+   * Deletes all job runs that do not have an associated build in OpenShift
+   */
+  private static synchronized void reconcileRunsAndBuilds() {
+    logger.info("Reconciling job runs and builds");
+
+    List<WorkflowJob> jobs = Jenkins.getActiveInstance().getAllItems(WorkflowJob.class);
+
+    for (WorkflowJob job : jobs) {
+      BuildConfigProjectProperty bcpp = job.getProperty(BuildConfigProjectProperty.class);
+      if (bcpp == null) {
+        // If we encounter a job without a BuildConfig, skip the reconciliation logic
+        continue;
+      }
+      BuildList buildList = getAuthenticatedOpenShiftClient().builds()
+        .inNamespace(bcpp.getNamespace()).withLabel("buildconfig=" + bcpp.getName()).list();
+
+      logger.info("Checking runs for BuildConfig " + bcpp.getNamespace() + "/" + bcpp.getName());
+
+      for (WorkflowRun run : job.getBuilds()) {
+        boolean found = false;
+        BuildCause cause = run.getCause(BuildCause.class);
+        for (Build build : buildList.getItems()) {
+          if (cause != null && cause.getUid().equals(build.getMetadata().getUid())) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          deleteRun(run);
+        }
+      }
+    }
+  }
 }
