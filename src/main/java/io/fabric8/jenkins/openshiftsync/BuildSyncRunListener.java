@@ -88,7 +88,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
     private static final Logger logger = Logger
             .getLogger(BuildSyncRunListener.class.getName());
 
-    private long pollPeriodMs = 1000;
+    private long pollPeriodMs = 1000 * 5;  // 5 seconds
+    private long delayPollPeriodMs = 1000; // 1 seconds
     private static final long maxDelay = 30000;
 
     private transient Set<Run> runsToPoll = new CopyOnWriteArraySet<>();
@@ -159,7 +160,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
                     pollLoop();
                 }
             };
-            Timer.get().scheduleAtFixedRate(task, pollPeriodMs, pollPeriodMs,
+            Timer.get().scheduleAtFixedRate(task, delayPollPeriodMs, pollPeriodMs,
                     TimeUnit.MILLISECONDS);
         }
     }

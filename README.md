@@ -22,3 +22,10 @@ Development Instructions
 * Install the plugin into a locally-running Jenkins
   Execute `mvn hpi:run`
   Navigate in brower to `http://localhost:8080/jenkins`
+  
+Synchronization Polling Frequencies
+-----------------------------------
+
+* Jenkins Run to OpenShift Build Sync: 5 seconds [BuildSyncRunListener](https://github.com/openshift/jenkins-sync-plugin/blob/master/src/main/java/io/fabric8/jenkins/openshiftsync/BuildSyncRunListener.java)
+  
+* OpenShift Resource Relist (backup for missed Watch events): 5 minutes [BaseWatcher](https://github.com/openshift/jenkins-sync-plugin/blob/master/src/main/java/io/fabric8/jenkins/openshiftsync/BaseWatcher.java)
