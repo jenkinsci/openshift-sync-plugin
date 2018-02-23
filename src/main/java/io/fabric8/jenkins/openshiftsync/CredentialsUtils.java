@@ -273,6 +273,15 @@ public class CredentialsUtils {
 
     private static Credentials newSSHUserCredential(String secretName,
             String username, String sshKeyData) {
+        if (secretName == null || secretName.length() == 0 ||
+                username == null || username.length()== 0 ||
+                sshKeyData == null || sshKeyData.length() == 0) {
+            logger.log(Level.WARNING, "Invalid secret data, secretName: " +
+                secretName + " username: " + username + " sshKeyData: " +
+                    sshKeyData);
+            return null;
+            
+        }
         return new BasicSSHUserPrivateKey(CredentialsScope.GLOBAL, secretName,
                 fixNull(username),
                 new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
@@ -282,6 +291,15 @@ public class CredentialsUtils {
 
     private static Credentials newUsernamePasswordCredentials(
             String secretName, String usernameData, String passwordData) {
+        if (secretName == null || secretName.length() == 0 ||
+                usernameData == null || usernameData.length()== 0 ||
+                        passwordData == null || passwordData.length() == 0) {
+            logger.log(Level.WARNING, "Invalid secret data, secretName: " +
+                secretName + " usernameData: " + usernameData + " passwordData: " +
+                passwordData);
+            return null;
+            
+        }
         return new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL,
                 secretName, secretName, new String(Base64.decode(usernameData),
                         StandardCharsets.UTF_8), new String(
