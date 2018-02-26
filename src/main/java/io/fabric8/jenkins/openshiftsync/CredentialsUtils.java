@@ -19,7 +19,6 @@ import org.acegisecurity.context.SecurityContextHolder;
 import org.apache.commons.lang.StringUtils;
 
 import java.io.IOException;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Map;
@@ -274,11 +273,11 @@ public class CredentialsUtils {
     private static Credentials newSSHUserCredential(String secretName,
             String username, String sshKeyData) {
         if (secretName == null || secretName.length() == 0 ||
-                username == null || username.length()== 0 ||
                 sshKeyData == null || sshKeyData.length() == 0) {
             logger.log(Level.WARNING, "Invalid secret data, secretName: " +
-                secretName + " username: " + username + " sshKeyData: " +
-                    sshKeyData);
+                secretName + " sshKeyData is null: " + (sshKeyData == null) +
+                " sshKeyData is empty: " + 
+                (sshKeyData != null ? sshKeyData.length() == 0 : false));
             return null;
             
         }
@@ -295,8 +294,12 @@ public class CredentialsUtils {
                 usernameData == null || usernameData.length()== 0 ||
                         passwordData == null || passwordData.length() == 0) {
             logger.log(Level.WARNING, "Invalid secret data, secretName: " +
-                secretName + " usernameData: " + usernameData + " passwordData: " +
-                passwordData);
+                secretName + " usernameData is null: " + (usernameData == null)
+                + " usernameData is empty: " + 
+                (usernameData != null ? usernameData.length() == 0 : false) + 
+                " passwordData is null: " + (passwordData == null) + 
+                " passwordData is empty: " + 
+                (passwordData != null ? passwordData.length() == 0 : false));
             return null;
             
         }
