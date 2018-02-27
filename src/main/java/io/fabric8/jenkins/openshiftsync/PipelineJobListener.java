@@ -16,7 +16,9 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 import com.google.common.base.Objects;
+
 import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
@@ -30,11 +32,13 @@ import io.fabric8.openshift.api.model.BuildSource;
 import io.fabric8.openshift.api.model.BuildStrategy;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.JenkinsPipelineBuildStrategy;
+
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -109,7 +113,6 @@ public class PipelineJobListener extends ItemListener {
 			WorkflowJob job = (WorkflowJob) item;
 			BuildConfigProjectProperty property = buildConfigProjectForJob(job);
 			if (property != null) {
-				logger.info("Deleting BuildConfig " + property.getNamespace() + "/" + property.getName());
 
 				NamespaceName buildName = OpenShiftUtils.buildConfigNameFromJenkinsJobName(job.getName(),
 						job.getProperty(BuildConfigProjectProperty.class).getNamespace());
@@ -119,9 +122,23 @@ public class PipelineJobListener extends ItemListener {
 				BuildConfig buildConfig = getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace)
 						.withName(buildConfigName).get();
 				if (buildConfig != null) {
+				    boolean generatedBySyncPlugin = false;
+				    Map<String,String> annotations = buildConfig.getMetadata().getAnnotations();
+				    if (annotations != null) {
+				        generatedBySyncPlugin = Annotations.GENERATED_BY_JENKINS.equals(annotations.get(Annotations.GENERATED_BY));
+				    }
 					try {
-						getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace)
-								.withName(buildConfigName).delete();
+	                    if (!generatedBySyncPlugin) {
+	                        logger.info("BuildConfig "+ property.getNamespace() 
+	                                + "/" + property.getName() + " will not" +
+	                                " be deleted since it was not created by "
+	                                + " the sync plugin");
+	                    } else {
+	                        logger.info("Deleting BuildConfig " + property.getNamespace() + "/" + property.getName());
+	                        getAuthenticatedOpenShiftClient().buildConfigs().inNamespace(namespace)
+                            .withName(buildConfigName).delete();
+	                        
+	                    }
 					} catch (KubernetesClientException e) {
 						if (HTTP_NOT_FOUND != e.getCode()) {
 							logger.log(Level.WARNING, "Failed to delete BuildConfig in namespace: " + namespace
@@ -228,7 +245,7 @@ public class PipelineJobListener extends ItemListener {
 			create = true;
 			jobBuildConfig = new BuildConfigBuilder().withNewMetadata().withName(buildConfigProjectProperty.getName())
 					.withNamespace(buildConfigProjectProperty.getNamespace())
-					.addToAnnotations(Annotations.GENERATED_BY, "jenkins").endMetadata().withNewSpec().withNewStrategy()
+					.addToAnnotations(Annotations.GENERATED_BY, Annotations.GENERATED_BY_JENKINS).endMetadata().withNewSpec().withNewStrategy()
 					.withType("JenkinsPipeline").withNewJenkinsPipelineStrategy().endJenkinsPipelineStrategy()
 					.endStrategy().endSpec().build();
 		} else {
