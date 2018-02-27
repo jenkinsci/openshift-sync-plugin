@@ -41,6 +41,7 @@ import javax.xml.transform.stream.StreamSource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -68,6 +69,22 @@ import static java.util.logging.Level.SEVERE;
  */
 public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConfig> {
 	private final Logger logger = Logger.getLogger(getClass().getName());
+    
+    // for coordinating between ItemListener.onUpdate and onDeleted both
+    // getting called when we delete a job; ID should be combo of namespace
+    // and name for BC to properly differentiate; we don't use UUID since
+    // when we filter on the ItemListener side the UUID may not be 
+    // available
+    private static final HashSet<String> deletesInProgress = new HashSet<String>();
+    public static synchronized void deleteInProgress(String bcName) {
+        deletesInProgress.add(bcName);
+    }
+    public static synchronized boolean isDeleteInProgress(String bcID) {
+        return deletesInProgress.contains(bcID);
+    }
+    public static synchronized void deleteCompleted(String bcID) {
+        deletesInProgress.remove(bcID);
+    }
 
 	@SuppressFBWarnings("EI_EXPOSE_REP2")
 	public BuildConfigWatcher(String[] namespaces) {
@@ -390,10 +407,12 @@ public class BuildConfigWatcher extends BaseWatcher implements Watcher<BuildConf
 					@Override
 					public Void call() throws Exception {
 						try {
+                                    deleteInProgress(buildConfig.getMetadata().getNamespace()+buildConfig.getMetadata().getName());
 							job.delete();
 						} finally {
 							removeJobWithBuildConfig(buildConfig);
 							Jenkins.getActiveInstance().rebuildDependencyGraphAsync();
+                                    deleteCompleted(buildConfig.getMetadata().getNamespace()+buildConfig.getMetadata().getName());
 						}
 						return null;
 					}

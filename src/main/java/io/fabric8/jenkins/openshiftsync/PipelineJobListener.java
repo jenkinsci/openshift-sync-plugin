@@ -161,8 +161,11 @@ public class PipelineJobListener extends ItemListener {
 
 	private void upsertWorkflowJob(WorkflowJob job) {
 		BuildConfigProjectProperty property = buildConfigProjectForJob(job);
-		if (property != null) {
-			logger.info("Upsert WorkflowJob " + job.getName() + " to BuildConfig: " + property.getNamespace() + "/"
+		if (property != null && 
+		    (!BuildConfigWatcher.isDeleteInProgress(
+		            property.getNamespace()+property.getName()))) {
+			logger.info("Upsert WorkflowJob " + job.getName() + 
+			        " to BuildConfig: " + property.getNamespace() + "/"
 					+ property.getName() + " in OpenShift");
 			upsertBuildConfigForJob(job, property);
 		}
