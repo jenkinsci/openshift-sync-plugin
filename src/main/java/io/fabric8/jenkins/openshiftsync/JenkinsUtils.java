@@ -64,7 +64,6 @@ import com.cloudbees.plugins.credentials.CredentialsParameterDefinition;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -114,7 +113,7 @@ public class JenkinsUtils {
 		}
 		return root;
 	}
-	
+
 	public static boolean verifyEnvVars(Map<String, ParameterDefinition> paramMap, WorkflowJob workflowJob) {
         if (paramMap != null) {
             String fullName = workflowJob.getFullName();
@@ -443,10 +442,11 @@ public class JenkinsUtils {
 
 	public synchronized static void cancelBuild(WorkflowJob job, Build build, boolean deleted) {
 		if (!cancelQueuedBuild(job, build)) {
-			cancelRunningBuild(job, build);
+      cancelRunningBuild(job, build);
 		}
-		if (deleted)
+		if (deleted) {
 			return;
+		}
 		try {
 			updateOpenShiftBuildPhase(build, CANCELLED);
 		} catch (Exception e) {
@@ -469,6 +469,15 @@ public class JenkinsUtils {
 			}
 		}
 		return null;
+	}
+
+	public synchronized static void deleteRun(WorkflowRun run) {
+			try {
+			  LOGGER.info("Deleting run: " + run.toString());
+				run.delete();
+			} catch (IOException e) {
+				LOGGER.warning("Unable to delete run " + run.toString() + ":" + e.getMessage());
+			}
 	}
 
 	private static boolean cancelRunningBuild(WorkflowJob job, Build build) {
