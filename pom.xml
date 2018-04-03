@@ -313,6 +313,11 @@
 		 <artifactId>kubernetes</artifactId>
 		 <version>0.10</version>
 	</dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-util</artifactId>
+      <version>9.3.7.v20160115</version>
+    </dependency>
 
   </dependencies>
 

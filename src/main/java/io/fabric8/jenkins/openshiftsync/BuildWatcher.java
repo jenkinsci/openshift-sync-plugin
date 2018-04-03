@@ -28,6 +28,7 @@ import jenkins.model.Jenkins;
 import jenkins.security.NotReallyRoleSensitiveCallable;
 
 import org.apache.commons.lang.StringUtils;
+import org.eclipse.jetty.util.ConcurrentHashSet;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
@@ -35,8 +36,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -73,7 +74,7 @@ public class BuildWatcher extends BaseWatcher {
     // when both are created in a simultaneous fashion, there is an up to 5
     // minute delay
     // before the job run gets kicked off
-    private static final HashSet<Build> buildsWithNoBCList = new HashSet<Build>();
+    private static final ConcurrentHashSet<Build> buildsWithNoBCList = new ConcurrentHashSet<>();
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public BuildWatcher(String[] namespaces) {
@@ -345,40 +346,45 @@ public class BuildWatcher extends BaseWatcher {
         return false;
     }
 
-    public static synchronized void addBuildToNoBCList(Build build) {
+    private static void addBuildToNoBCList(Build build) {
         // should have been caught upstack, but just in case since public method
         if (!OpenShiftUtils.isPipelineStrategyBuild(build))
             return;
-        buildsWithNoBCList.add(build);
+        try {
+          buildsWithNoBCList.add(build);
+        } catch (ConcurrentModificationException | IllegalArgumentException |
+          UnsupportedOperationException | NullPointerException e) {
+          logger.log(Level.WARNING,"Failed to add item " +
+            build.getMetadata().getName(), e);
+        }
     }
 
-    private static synchronized void removeBuildFromNoBCList(Build build) {
-        buildsWithNoBCList.remove(build);
-    }
-
-    private static synchronized void clearNoBCList() {
-        buildsWithNoBCList.clear();
+    private static void removeBuildFromNoBCList(Build build) {
+          buildsWithNoBCList.remove(build);
     }
 
     // trigger any builds whose watch events arrived before the
     // corresponding build config watch events
-    public static synchronized void flushBuildsWithNoBCList() {
-        HashSet<Build> clone = (HashSet<Build>) buildsWithNoBCList.clone();
-        clearNoBCList();
-        for (Build build : clone) {
-            WorkflowJob job = getJobFromBuild(build);
-            if (job != null)
-                try {
-                    logger.info("triggering job run for previously skipped build "
-                            + build.getMetadata().getName());
-                    triggerJob(job, build);
-                } catch (IOException e) {
-                    logger.log(Level.WARNING, "flushCachedBuilds", e);
-                }
-            else
-                addBuildToNoBCList(build);
+    public static void flushBuildsWithNoBCList() {
+        for (Build build : buildsWithNoBCList) {
+          WorkflowJob job = getJobFromBuild(build);
+          if (job != null) {
+            try {
+              logger.info("triggering job run for previously skipped build "
+                + build.getMetadata().getName());
+              triggerJob(job, build);
+            } catch (IOException e) {
+              logger.log(Level.WARNING, "flushCachedBuilds", e);
+            }
+            try {
+              removeBuildFromNoBCList(build);
+            } catch (UnsupportedOperationException | IllegalStateException |
+              NullPointerException | ClassCastException e) {
+              logger.log(Level.WARNING, "Failed to remove item" +
+                build.getMetadata().getName(), e);
+            }
+          }
         }
-
     }
 
     // innerDeleteEventToJenkinsJobRun is the actual delete logic at the heart
