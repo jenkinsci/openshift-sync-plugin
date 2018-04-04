@@ -57,6 +57,12 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
 	private String skipBranchSuffix;
 
+    private int buildListInterval = 300;
+    private int buildConfigListInterval = 300;
+    private int secretListInterval = 300;
+    private int configMapListInterval = 300;
+    private int imageStreamListInterval = 300;
+    
 	private transient BuildWatcher buildWatcher;
 
 	private transient BuildConfigWatcher buildConfigWatcher;
@@ -69,7 +75,9 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
 	@DataBoundConstructor
 	public GlobalPluginConfiguration(boolean enable, String server, String namespace, String credentialsId,
-			String jobNamePattern, String skipOrganizationPrefix, String skipBranchSuffix) {
+			String jobNamePattern, String skipOrganizationPrefix, String skipBranchSuffix,
+			int buildListInterval, int buildConfigListInterval, int configMapListInterval,
+			int secretListInterval, int imageStreamListInterval) {
 		this.enabled = enable;
 		this.server = server;
 		this.namespaces = StringUtils.isBlank(namespace) ? null : namespace.split(" ");
@@ -77,6 +85,11 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 		this.jobNamePattern = jobNamePattern;
 		this.skipOrganizationPrefix = skipOrganizationPrefix;
 		this.skipBranchSuffix = skipBranchSuffix;
+		this.buildListInterval = buildListInterval;
+		this.buildConfigListInterval = buildConfigListInterval;
+		this.configMapListInterval = configMapListInterval;
+		this.secretListInterval = secretListInterval;
+		this.imageStreamListInterval = imageStreamListInterval;
 		configChange();
 	}
 
@@ -161,7 +174,47 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 		this.skipBranchSuffix = skipBranchSuffix;
 	}
 
-	// https://wiki.jenkins-ci.org/display/JENKINS/Credentials+Plugin
+    public int getBuildListInterval() {
+        return buildListInterval;
+    }
+
+    public void setBuildListInterval(int buildListInterval) {
+        this.buildListInterval = buildListInterval;
+    }
+
+    public int getBuildConfigListInterval() {
+        return buildConfigListInterval;
+    }
+
+    public void setBuildConfigListInterval(int buildConfigListInterval) {
+        this.buildConfigListInterval = buildConfigListInterval;
+    }
+
+    public int getSecretListInterval() {
+        return secretListInterval;
+    }
+
+    public void setSecretListInterval(int secretListInterval) {
+        this.secretListInterval = secretListInterval;
+    }
+
+    public int getConfigMapListInterval() {
+        return configMapListInterval;
+    }
+
+    public void setConfigMapListInterval(int configMapListInterval) {
+        this.configMapListInterval = configMapListInterval;
+    }
+
+    public int getImageStreamListInterval() {
+        return imageStreamListInterval;
+    }
+
+    public void setImageStreamListInterval(int imageStreamListInterval) {
+        this.imageStreamListInterval = imageStreamListInterval;
+    }
+
+    // https://wiki.jenkins-ci.org/display/JENKINS/Credentials+Plugin
 	// http://javadoc.jenkins-ci.org/credentials/com/cloudbees/plugins/credentials/common/AbstractIdCredentialsListBoxModel.html
 	// https://github.com/jenkinsci/kubernetes-plugin/blob/master/src/main/java/org/csanchez/jenkins/plugins/kubernetes/KubernetesCloud.java
 	public static ListBoxModel doFillCredentialsIdItems(String credentialsId) {
@@ -180,24 +233,32 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 				.includeCurrentValue(credentialsId);
 	}
 
-	private void configChange() {
+	private synchronized void configChange() {
+	    logger.info("OpenShift Sync Plugin processing a newly supplied configuration");
+        if (buildConfigWatcher != null) {
+            buildConfigWatcher.stop();
+        }
+        if (buildWatcher != null) {
+            buildWatcher.stop();
+        }
+        if (configMapWatcher != null) {
+            configMapWatcher.stop();
+        }
+        if (imageStreamWatcher != null) {
+            imageStreamWatcher.stop();
+        }
+        if (secretWatcher != null) {
+            secretWatcher.stop();
+        }
+        buildWatcher = null;
+        buildConfigWatcher = null;
+        configMapWatcher = null;
+        imageStreamWatcher = null;
+        secretWatcher = null;
+        OpenShiftUtils.shutdownOpenShiftClient();
+        
 		if (!enabled) {
-			if (buildConfigWatcher != null) {
-				buildConfigWatcher.stop();
-			}
-			if (buildWatcher != null) {
-				buildWatcher.stop();
-			}
-			if (configMapWatcher != null) {
-				configMapWatcher.stop();
-			}
-			if (imageStreamWatcher != null) {
-				imageStreamWatcher.stop();
-			}
-			if (secretWatcher != null) {
-			    secretWatcher.stop();
-			}
-			OpenShiftUtils.shutdownOpenShiftClient();
+		    logger.info("OpenShift Sync Plugin has been disabled");
 			return;
 		}
 		try {
@@ -207,7 +268,7 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 			Runnable task = new SafeTimerTask() {
 				@Override
 				protected void doRun() throws Exception {
-					logger.info("Waiting for Jenkins to be started");
+					logger.info("Confirming Jenkins is started");
 					while (true) {
 						final Jenkins instance = Jenkins.getActiveInstance();
 						// We can look at Jenkins Init Level to see if we are
