@@ -19,8 +19,8 @@ import static java.net.HttpURLConnection.HTTP_GONE;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
@@ -38,7 +38,7 @@ public abstract class BaseWatcher {
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public BaseWatcher(String[] namespaces) {
         this.namespaces = namespaces;
-        watches = new HashMap<String, Watch>();
+        watches = new ConcurrentHashMap<String, Watch>();
     }
 
     public abstract Runnable getStartTimerTask();
@@ -68,8 +68,8 @@ public abstract class BaseWatcher {
 
         for (Map.Entry<String, Watch> entry : watches.entrySet()) {
             entry.getValue().close();
-            watches.remove(entry.getKey());
         }
+        watches.clear();
     }
 
     public synchronized void onClose(KubernetesClientException e, String namespace) {
