@@ -12,6 +12,24 @@ the Jenkins Credentials Plugin.
 * changes in OpenShift ConfigMap resources are examined for XML documents that correspond to Pod Template configuration for the Kubernetes Cloud plugin at http://github.com/jenkinsci/kubernetes-plugin and change the configuration of the Kuberentes Cloud plugin running in Jenkins to add, edit, or remove Pod Templates based on what exists in the ConfigMap; also note, if the <image></image> setting of the Pod Template starts with "imagestreamtag:", then this plugin will look up the ImageStreamTag for that entry (stripping "imagestreamtag:" first) and if found, replace the entry with the ImageStreamTag's Docker image reference.
 * changes to OpenShift ImageStream resources with the label "role" set to "jenkins-slave" and ImageStreamTag resources with the annotation "role" set to "jenkins-slave" are considered images to used with Pod Templates for the Kubernetes Cloud plugin, where the Pod Templates are added, modified, or deleted from the Kubernetes cloud plugin as corresponding ImageStreams and ImageStreamTags are added, modified, or deleted, or have the "role=jenkins-slave" setting changed.
 * changes to OpenShift Secrets with the label "credential.sync.jenkins.openshift.io" set to "true" will result in those Secrets getting coverted into Jenkins Credentials that are registered with the Jenkins Credentials Plugin.
+ * For a Jenkins Secret File credential, the secret requires the 'filename' attribute. See the example below:
+
+```bash
+# Create the secret
+oc create secret generic mysecretfile --from-file=filename=mysecret.txt
+# Add label to mark that it should be synced.
+oc label secret mysecretfile credential.sync.jenkins.openshift.io=true
+```
+
+```groovy
+// the credential will be created by the plugin with the name '<namespace>-<secretname>'
+withCredentials([file(credentialsId: 'namespace-mysecretfile', variable: 'MYFILE')]) {
+ sh '''
+   #!/bin/bash
+   cp ${MYFILE} newsecretfile.txt
+ '''
+}
+```
 
 Development Instructions
 ------------------------
