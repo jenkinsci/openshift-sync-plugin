@@ -17,6 +17,7 @@ import jenkins.model.Jenkins;
 import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -34,7 +35,7 @@ public class CredentialsUtils {
 
     private final static Logger logger = Logger
             .getLogger(CredentialsUtils.class.getName());
-    
+
     public static synchronized Secret getSourceCredentials(
             BuildConfig buildConfig) {
         if (buildConfig.getSpec() != null
@@ -247,13 +248,18 @@ public class CredentialsUtils {
                 return newSSHUserCredential(secretName,
                         data.get(OPENSHIFT_SECRETS_DATA_USERNAME), sshKeyData);
             }
+            String fileData = data.get(OPENSHIFT_SECRETS_DATA_FILENAME);
+            if (isNotBlank(fileData)) {
+                return newSecretFileCredential(secretName, fileData);
+            }
 
             logger.log(
                     Level.WARNING,
-                    "Opaque secret either requires {0} and {1} fields for basic auth or {2} field for SSH key",
-                    new Object[] { OPENSHIFT_SECRETS_DATA_USERNAME,
+                    "Opaque secret {0} either requires {1} and {2} fields for basic auth or {3} field for SSH key or {4} field for file credential",
+                    new Object[] { secretName, OPENSHIFT_SECRETS_DATA_USERNAME,
                             OPENSHIFT_SECRETS_DATA_PASSWORD,
-                            OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY });
+                            OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY,
+                            OPENSHIFT_SECRETS_DATA_FILENAME});
             return null;
         case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
             return newUsernamePasswordCredentials(secretName,
@@ -268,6 +274,19 @@ public class CredentialsUtils {
                     "Unknown secret type: " + secret.getType());
             return null;
         }
+    }
+
+    private static Credentials newSecretFileCredential(String secretName, String fileData) {
+        if (secretName == null || secretName.length() == 0 ||
+                fileData == null || fileData.length() == 0) {
+            logger.log(Level.WARNING, "Invalid secret data, secretName: " +
+                    secretName + " filename is null: " + (fileData == null) +
+                    " filename is empty: " +
+                    (fileData != null ? fileData.length() == 0 : false));
+            return null;
+
+        }
+        return new FileCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, secretName, SecretBytes.fromString(fileData));
     }
 
     private static Credentials newSSHUserCredential(String secretName,
