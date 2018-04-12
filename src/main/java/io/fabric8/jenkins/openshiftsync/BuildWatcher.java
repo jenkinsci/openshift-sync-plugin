@@ -470,15 +470,15 @@ public class BuildWatcher extends BaseWatcher {
     List<WorkflowJob> jobs = Jenkins.getActiveInstance().getAllItems(WorkflowJob.class);
 
     for (WorkflowJob job : jobs) {
-      BuildConfigProjectProperty bcpp = job.getProperty(BuildConfigProjectProperty.class);
-      if (bcpp == null) {
-        // If we encounter a job without a BuildConfig, skip the reconciliation logic
+      BuildConfigProjectProperty property = job.getProperty(BuildConfigProjectProperty.class);
+      if (property == null || StringUtils.isBlank(property.getNamespace()) || StringUtils.isBlank(property.getName())) {
         continue;
       }
-      BuildList buildList = getAuthenticatedOpenShiftClient().builds()
-        .inNamespace(bcpp.getNamespace()).withLabel("buildconfig=" + bcpp.getName()).list();
 
-      logger.info("Checking runs for BuildConfig " + bcpp.getNamespace() + "/" + bcpp.getName());
+      logger.info("Checking job " + job.toString() + " runs for BuildConfig " + property.getNamespace() + "/" + property.getName());
+
+      BuildList buildList = getAuthenticatedOpenShiftClient().builds()
+        .inNamespace(property.getNamespace()).withLabel("buildconfig=" + property.getName()).list();
 
       for (WorkflowRun run : job.getBuilds()) {
         boolean found = false;
