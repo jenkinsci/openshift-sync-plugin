@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static io.fabric8.jenkins.openshiftsync.Annotations.BUILDCONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfigNameNamespace;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
@@ -58,6 +59,7 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isNew;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAnnotation;
 import static java.util.logging.Level.WARNING;
 
 public class BuildWatcher extends BaseWatcher {
@@ -422,6 +424,7 @@ public class BuildWatcher extends BaseWatcher {
             // event, clear out from pre-BC cache
             removeBuildFromNoBCList(build);
         }
+        deleteRun(job, build);
     }
 
     // in response to receiving an openshift delete build event, this method
@@ -446,9 +449,10 @@ public class BuildWatcher extends BaseWatcher {
                 bcUid = ref.getUid().intern();
                 synchronized (bcUid) {
                     // if entire job already deleted via bc delete, just return
-                    if (getJobFromBuildConfigNameNamespace(build.getMetadata().getName(),
-                            build.getMetadata().getNamespace()) == null)
-                        return;
+                    if (getJobFromBuildConfigNameNamespace(getAnnotation(build, BUILDCONFIG_NAME),
+                            build.getMetadata().getNamespace()) == null) {
+                      return;
+                    }
                     innerDeleteEventToJenkinsJobRun(build);
                     return;
                 }
