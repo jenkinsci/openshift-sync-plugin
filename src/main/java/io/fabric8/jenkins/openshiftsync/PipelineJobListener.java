@@ -44,6 +44,7 @@ import java.util.logging.Logger;
 
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.removeJobWithBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.updateBuildConfigFromJob;
+import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_DEFAULT_NAMESPACE;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getOpenShiftClient;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
@@ -59,7 +60,7 @@ public class PipelineJobListener extends ItemListener {
     private static final Logger logger = Logger.getLogger(PipelineJobListener.class.getName());
 
     private String server;
-    private String[] namespaces;
+    private String namespace;
     private String jobNamePattern;
 
     public PipelineJobListener() {
@@ -69,19 +70,21 @@ public class PipelineJobListener extends ItemListener {
     @DataBoundConstructor
     @SuppressFBWarnings("EI_EXPOSE_REP2")
     public PipelineJobListener(String server, String[] namespaces, String jobNamePattern) {
+
         this.server = server;
-        this.namespaces = namespaces;
+        this.namespace = namespaces[0];
         this.jobNamePattern = jobNamePattern;
         init();
     }
 
     @Override
     public String toString() {
-        return "PipelineJobListener{" + "server='" + server + '\'' + ", namespace='" + namespaces + '\'' + ", jobNamePattern='" + jobNamePattern + '\'' + '}';
+        return "PipelineJobListener{" + "server='" + server + '\'' + ", namespace='" + namespace + '\'' + ", jobNamePattern='" + jobNamePattern + '\'' + '}';
     }
 
     private void init() {
-        namespaces = OpenShiftUtils.getNamespaceOrUseDefault(namespaces, getOpenShiftClient());
+        // Use namespace.split here to simulate passing an array of strings
+        namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace.split(" "), getOpenShiftClient())[0];
     }
 
     @Override
@@ -201,20 +204,18 @@ public class PipelineJobListener extends ItemListener {
             // TODO what to do for the resourceVersion?
             String resourceVersion = null;
             String buildRunPolicy = "Serial";
-            for (String namespace : namespaces) {
-                logger.info("Creating BuildConfigProjectProperty for namespace: " + namespace + " name: " + buildConfigName);
-                if (property != null) {
-                    property.setNamespace(namespace);
-                    property.setName(buildConfigName);
-                    if (!StringUtils.isNotBlank(property.getBuildRunPolicy())) {
-                        property.setBuildRunPolicy(buildRunPolicy);
-                    }
-                    return property;
-                } else {
-                    return new BuildConfigProjectProperty(namespace, buildConfigName, uuid, resourceVersion, buildRunPolicy);
-                }
-            }
 
+            logger.info("Creating BuildConfigProjectProperty for namespace: " + namespace + " name: " + buildConfigName);
+            if (property != null) {
+                property.setNamespace(namespace);
+                property.setName(buildConfigName);
+                if (!StringUtils.isNotBlank(property.getBuildRunPolicy())) {
+                    property.setBuildRunPolicy(buildRunPolicy);
+                }
+                return property;
+            } else {
+                return new BuildConfigProjectProperty(namespace, buildConfigName, uuid, resourceVersion, buildRunPolicy);
+            }
         }
         return null;
     }
@@ -305,7 +306,7 @@ public class PipelineJobListener extends ItemListener {
         GlobalPluginConfiguration config = GlobalPluginConfiguration.get();
         if (config != null) {
             this.jobNamePattern = config.getJobNamePattern();
-            this.namespaces = (config.getNamespace()).split(" ");
+            this.namespace = (config.getNamespace()).split(" ")[0];
             this.server = config.getServer();
         }
     }
