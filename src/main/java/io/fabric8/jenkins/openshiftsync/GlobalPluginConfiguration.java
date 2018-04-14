@@ -57,11 +57,11 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
 	private String skipBranchSuffix;
 
-    private int buildListInterval = 300;
-    private int buildConfigListInterval = 300;
-    private int secretListInterval = 300;
-    private int configMapListInterval = 300;
-    private int imageStreamListInterval = 300;
+  private int buildListInterval = 300;
+  private int buildConfigListInterval = 300;
+  private int secretListInterval = 300;
+  private int configMapListInterval = 300;
+  private int imageStreamListInterval = 300;
     
 	private transient BuildWatcher buildWatcher;
 
