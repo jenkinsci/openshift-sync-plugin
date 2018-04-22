@@ -84,7 +84,7 @@ public class PipelineJobListener extends ItemListener {
 
     private void init() {
         // Use namespace.split here to simulate passing an array of strings
-        namespace = OpenShiftUtils.getNamespaceOrUseDefault(namespace.split(" "), getOpenShiftClient())[0];
+        namespace = OpenShiftUtils.getNamespaceOrUseDefault(((namespace != null) ? namespace.split(" ") : null), getOpenShiftClient())[0];
     }
 
     @Override
