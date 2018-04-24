@@ -51,6 +51,8 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 
 	private String[] namespaces;
 
+	private boolean foldersEnabled = true;
+
 	private String jobNamePattern;
 
 	private String skipOrganizationPrefix;
@@ -74,13 +76,15 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 	private transient ImageStreamWatcher imageStreamWatcher;
 
 	@DataBoundConstructor
-	public GlobalPluginConfiguration(boolean enable, String server, String namespace, String credentialsId,
+	public GlobalPluginConfiguration(boolean enable, String server, String namespace,
+      boolean foldersEnabled, String credentialsId,
 			String jobNamePattern, String skipOrganizationPrefix, String skipBranchSuffix,
 			int buildListInterval, int buildConfigListInterval, int configMapListInterval,
 			int secretListInterval, int imageStreamListInterval) {
 		this.enabled = enable;
 		this.server = server;
 		this.namespaces = StringUtils.isBlank(namespace) ? null : namespace.split(" ");
+		this.foldersEnabled = foldersEnabled;
 		this.credentialsId = Util.fixEmptyAndTrim(credentialsId);
 		this.jobNamePattern = jobNamePattern;
 		this.skipOrganizationPrefix = skipOrganizationPrefix;
@@ -149,6 +153,14 @@ public class GlobalPluginConfiguration extends GlobalConfiguration {
 	public void setNamespace(String namespace) {
 		this.namespaces = StringUtils.isBlank(namespace) ? null : namespace.split(" ");
 	}
+
+	public boolean getFoldersEnabled() {
+	  return foldersEnabled;
+  }
+
+  public void setFoldersEnabled(boolean foldersEnabled) {
+	  this.foldersEnabled = foldersEnabled;
+  }
 
 	public String getJobNamePattern() {
 		return jobNamePattern;
