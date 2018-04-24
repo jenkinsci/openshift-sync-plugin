@@ -254,7 +254,11 @@ public class OpenShiftUtils {
         if (StringUtils.isNotBlank(jobName)) {
             return jobName;
         }
-        return getNamespace(bc) + "/" + getName(bc);
+        if (GlobalPluginConfiguration.get().getFoldersEnabled()) {
+          return getNamespace(bc) + "/" + getName(bc);
+        } else {
+          return getName(bc);
+        }
     }
 
     /**
