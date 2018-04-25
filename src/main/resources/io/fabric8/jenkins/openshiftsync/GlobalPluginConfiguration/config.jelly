@@ -33,6 +33,10 @@
              description="The namespace to sync BuildConfigs with. Environment variables in the form ${name} will be expanded.  Multiple namespaces can be listed using a space separator.">
       <f:textbox/>
     </f:entry>
+    <f:entry title="Folders" field="foldersEnabled"
+             description="Check if we should create folders for each OpenShift namespace">
+      <f:checkbox/>
+    </f:entry>
     <f:entry title="Sync Job Name Pattern " field="jobNamePattern"
              description="The regular expression to match pipeline job names which should be sync'd to BuildConfigs in OpenShift - leave blank to not sync Jenkins Jobs to OpenShift BuildConfigs.">
       <f:textbox/>
