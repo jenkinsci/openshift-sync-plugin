@@ -197,8 +197,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
 
     protected void pollLoop() {
-        while (!runsToPoll.isEmpty()) {
-            pollRun(runsToPoll.poll());
+        Iterator<Run> iter = runsToPoll.iterator();
+        while (iter.hasNext()) {
+            pollRun(iter.next());
         }
     }
 
@@ -263,7 +264,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
 
         // if the run is in some sort of terminal state, update
         if (status != StatusExt.IN_PROGRESS && 
-        	status != StatusExt.PAUSED_PENDING_INPUT) {
+            status != StatusExt.PAUSED_PENDING_INPUT) {
             return true;
         }
 
