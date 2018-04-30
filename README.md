@@ -30,6 +30,14 @@ withCredentials([file(credentialsId: 'namespace-mysecretfile', variable: 'MYFILE
  '''
 }
 ```
+ * For a Jenkins Certificate credential, the secret requires the 'certificate' and 'password' attributes. See the example below:
+
+```bash
+# Create the secret
+oc create secret generic mycert --from-file=certificate=mycert.p12 --from-literal=password=password
+# Add label to mark that it should be synced.
+oc label secret mysecretfile credential.sync.jenkins.openshift.io=true
+```
 
 Development Instructions
 ------------------------
