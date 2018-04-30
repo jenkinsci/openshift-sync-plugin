@@ -262,7 +262,8 @@ public class BuildSyncRunListener extends RunListener<Run> {
         }
 
         // if the run is in some sort of terminal state, update
-        if (status != StatusExt.IN_PROGRESS) {
+        if (status != StatusExt.IN_PROGRESS && 
+        	status != StatusExt.PAUSED_PENDING_INPUT) {
             return true;
         }
 
