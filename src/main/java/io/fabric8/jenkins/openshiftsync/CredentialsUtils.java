@@ -5,6 +5,7 @@ import com.cloudbees.plugins.credentials.*;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
+import com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl;
 
 import hudson.model.Fingerprint;
 import hudson.remoting.Base64;
@@ -142,7 +143,7 @@ public class CredentialsUtils {
         }
         return id;
     }
-    
+
     private static void deleteCredential(String id, NamespaceName name,
             String resourceRevision) throws IOException {
         Credentials existingCred = lookupCredentials(id);
@@ -252,14 +253,19 @@ public class CredentialsUtils {
             if (isNotBlank(fileData)) {
                 return newSecretFileCredential(secretName, fileData);
             }
+            String certificateDate = data.get(OPENSHIFT_SECRETS_DATA_CERTIFICATE);
+            if (isNotBlank(certificateDate)) {
+                return newCertificateCredential(secretName, passwordData, certificateDate);
+            }
 
             logger.log(
                     Level.WARNING,
-                    "Opaque secret {0} either requires {1} and {2} fields for basic auth or {3} field for SSH key or {4} field for file credential",
+                    "Opaque secret {0} either requires {1} and {2} fields for basic auth; {3} field for SSH key; {4} field for file or {5} field for certificate credential",
                     new Object[] { secretName, OPENSHIFT_SECRETS_DATA_USERNAME,
                             OPENSHIFT_SECRETS_DATA_PASSWORD,
                             OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY,
-                            OPENSHIFT_SECRETS_DATA_FILENAME});
+                            OPENSHIFT_SECRETS_DATA_FILENAME,
+                            OPENSHIFT_SECRETS_DATA_CERTIFICATE});
             return null;
         case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
             return newUsernamePasswordCredentials(secretName,
@@ -289,16 +295,32 @@ public class CredentialsUtils {
         return new FileCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, secretName, SecretBytes.fromString(fileData));
     }
 
+    private static Credentials newCertificateCredential(String secretName, String passwordData, String certificateData) {
+        if (secretName == null || secretName.length() == 0 ||
+                certificateData == null || certificateData.length() == 0) {
+            logger.log(Level.WARNING, "Invalid secret data, secretName: " +
+                    secretName + " certificate is null: " + (certificateData == null) +
+                    " certificate is empty: " +
+                    (certificateData != null ? certificateData.length() == 0 : false));
+            return null;
+        }
+        String certificatePassword = passwordData != null ? new String(Base64.decode(passwordData)) : null;
+        return new CertificateCredentialsImpl(CredentialsScope.GLOBAL,
+                secretName, secretName, certificatePassword,
+                new CertificateCredentialsImpl.UploadedKeyStoreSource(
+                    SecretBytes.fromString(certificateData)));
+    }
+
     private static Credentials newSSHUserCredential(String secretName,
             String username, String sshKeyData) {
         if (secretName == null || secretName.length() == 0 ||
                 sshKeyData == null || sshKeyData.length() == 0) {
             logger.log(Level.WARNING, "Invalid secret data, secretName: " +
                 secretName + " sshKeyData is null: " + (sshKeyData == null) +
-                " sshKeyData is empty: " + 
+                " sshKeyData is empty: " +
                 (sshKeyData != null ? sshKeyData.length() == 0 : false));
             return null;
-            
+
         }
         return new BasicSSHUserPrivateKey(CredentialsScope.GLOBAL, secretName,
                 fixNull(username),
@@ -314,13 +336,13 @@ public class CredentialsUtils {
                         passwordData == null || passwordData.length() == 0) {
             logger.log(Level.WARNING, "Invalid secret data, secretName: " +
                 secretName + " usernameData is null: " + (usernameData == null)
-                + " usernameData is empty: " + 
-                (usernameData != null ? usernameData.length() == 0 : false) + 
-                " passwordData is null: " + (passwordData == null) + 
-                " passwordData is empty: " + 
+                + " usernameData is empty: " +
+                (usernameData != null ? usernameData.length() == 0 : false) +
+                " passwordData is null: " + (passwordData == null) +
+                " passwordData is empty: " +
                 (passwordData != null ? passwordData.length() == 0 : false));
             return null;
-            
+
         }
         return new UsernamePasswordCredentialsImpl(CredentialsScope.GLOBAL,
                 secretName, secretName, new String(Base64.decode(usernameData),
@@ -330,7 +352,7 @@ public class CredentialsUtils {
 
     /**
      * Does our configuration have credentials?
-     * 
+     *
      * @return true if found.
      */
     public static boolean hasCredentials() {
