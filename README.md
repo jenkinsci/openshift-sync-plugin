@@ -11,8 +11,12 @@ the Jenkins Credentials Plugin.
 * changes in a Jenkins Build Run thats associated with a Jenkins Job gets replicated to an OpenShift Build object (which is created if necessary if the build was triggered via Jenkins)
 * changes in OpenShift ConfigMap resources are examined for XML documents that correspond to Pod Template configuration for the Kubernetes Cloud plugin at http://github.com/jenkinsci/kubernetes-plugin and change the configuration of the Kuberentes Cloud plugin running in Jenkins to add, edit, or remove Pod Templates based on what exists in the ConfigMap; also note, if the <image></image> setting of the Pod Template starts with "imagestreamtag:", then this plugin will look up the ImageStreamTag for that entry (stripping "imagestreamtag:" first) and if found, replace the entry with the ImageStreamTag's Docker image reference.
 * changes to OpenShift ImageStream resources with the label "role" set to "jenkins-slave" and ImageStreamTag resources with the annotation "role" set to "jenkins-slave" are considered images to used with Pod Templates for the Kubernetes Cloud plugin, where the Pod Templates are added, modified, or deleted from the Kubernetes cloud plugin as corresponding ImageStreams and ImageStreamTags are added, modified, or deleted, or have the "role=jenkins-slave" setting changed.
-* changes to OpenShift Secrets with the label "credential.sync.jenkins.openshift.io" set to "true" will result in those Secrets getting coverted into Jenkins Credentials that are registered with the Jenkins Credentials Plugin.
- * For a Jenkins Secret File credential, the secret requires the 'filename' attribute. See the example below:
+* changes to OpenShift Secrets with the label "credential.sync.jenkins.openshift.io" set to "true" will result in those Secrets getting coverted into Jenkins Credentials that are registered with the Jenkins Credentials Plugin.  Mappings occur as follows:
+    * "kubernetes.io/basic-auth" map to Jenkins Username / Password credentials
+    * "kubernetes.io/ssh-auth" map to Jenkins SSH User credentials
+    * Opaque/generic secrets where the data has a "username" key and a "password" key map to Jenkins Username / Password credentials
+    * Opaque/generic secrets where the data has a "ssh-privatekey" map to Jenkins SSH User credentials
+* For a Jenkins Secret File credential, the opaque/generic secret requires the 'filename' attribute. See the example below:
 
 ```bash
 # Create the secret
@@ -30,7 +34,7 @@ withCredentials([file(credentialsId: 'namespace-mysecretfile', variable: 'MYFILE
  '''
 }
 ```
- * For a Jenkins Certificate credential, the secret requires the 'certificate' and 'password' attributes. See the example below:
+* For a Jenkins Certificate credential, the opaque/generic secret requires the 'certificate' and 'password' attributes. See the example below:
 
 ```bash
 # Create the secret
@@ -55,6 +59,13 @@ Synchronization Polling Frequencies
 * Jenkins Run to OpenShift Build Sync: 5 seconds [BuildSyncRunListener](https://github.com/openshift/jenkins-sync-plugin/blob/master/src/main/java/io/fabric8/jenkins/openshiftsync/BuildSyncRunListener.java)
   
 * OpenShift Resource Relist (backup for missed Watch events): 5 minutes [BaseWatcher](https://github.com/openshift/jenkins-sync-plugin/blob/master/src/main/java/io/fabric8/jenkins/openshiftsync/BaseWatcher.java)
+    * Each of the API Object Relist intervals are now configurable from the "Manage Jenkins" -> "Configure System" section for this plugin
+    
+Other configuration
+-------------------
+
+* By default, the project running Jenkins is monitored, but additional projects can be monitored by adding them to the Namespace list in the "Manage Jenkins" -> "Configure System" section for this plugin.  NOTE:  the service account associated with the Jenkins deployment must have the `edit` role for each project monitored
+* By default, a Jenkins folder will be created for each project monitored when any Pipeline Strategy build configs are created.  This behavior can be turned off from the "Manage Jenkins" -> "Configure System" section for this plugin.  If turned off, the Jenkins job will not be placed in a folder, and the name will be a combination of the project and build config name.     
 
 Restrictions with respect to Jenkins Pipelines
 --------------------------------------------------
