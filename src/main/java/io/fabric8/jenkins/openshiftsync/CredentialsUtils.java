@@ -323,7 +323,8 @@ public class CredentialsUtils {
 
         }
         return new BasicSSHUserPrivateKey(CredentialsScope.GLOBAL, secretName,
-                fixNull(username),
+                fixNull(username).isEmpty() ? 
+                        "" : new String(Base64.decode(username), StandardCharsets.UTF_8),
                 new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
                         new String(Base64.decode(sshKeyData),
                                 StandardCharsets.UTF_8)), null, secretName);
