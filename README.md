@@ -16,6 +16,7 @@ the Jenkins Credentials Plugin.
     * "kubernetes.io/ssh-auth" map to Jenkins SSH User credentials
     * Opaque/generic secrets where the data has a "username" key and a "password" key map to Jenkins Username / Password credentials
     * Opaque/generic secrets where the data has a "ssh-privatekey" map to Jenkins SSH User credentials
+    * Opaque/generic secrets where the data has a "secrettext" key map to Jenkins Secret Text credentials
 * For a Jenkins Secret File credential, the opaque/generic secret requires the 'filename' attribute. See the example below:
 
 ```bash

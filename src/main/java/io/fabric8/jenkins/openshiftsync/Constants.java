@@ -45,6 +45,7 @@ public class Constants {
     public static final String OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY = "ssh-privatekey";
     public static final String OPENSHIFT_SECRETS_DATA_FILENAME = "filename";
     public static final String OPENSHIFT_SECRETS_DATA_CERTIFICATE = "certificate";
+    public static final String OPENSHIFT_SECRETS_DATA_SECRET_TEXT = "secrettext";
     public static final String OPENSHIFT_SECRETS_TYPE_SSH = "kubernetes.io/ssh-auth";
     public static final String OPENSHIFT_SECRETS_TYPE_BASICAUTH = "kubernetes.io/basic-auth";
     public static final String OPENSHIFT_SECRETS_TYPE_OPAQUE = "Opaque";

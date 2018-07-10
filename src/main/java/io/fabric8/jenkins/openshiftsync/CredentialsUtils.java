@@ -19,6 +19,7 @@ import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl;
+import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -257,6 +258,10 @@ public class CredentialsUtils {
             if (isNotBlank(certificateDate)) {
                 return newCertificateCredential(secretName, passwordData, certificateDate);
             }
+            String secretTextData = data.get(OPENSHIFT_SECRETS_DATA_SECRET_TEXT);
+            if (isNotBlank(secretTextData)) {
+                return newSecretTextCredential(secretName, secretTextData);
+            }
 
             logger.log(
                     Level.WARNING,
@@ -293,6 +298,19 @@ public class CredentialsUtils {
 
         }
         return new FileCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, secretName, SecretBytes.fromString(fileData));
+    }
+
+    private static Credentials newSecretTextCredential(String secretName, String secretText) {
+        if (secretName == null || secretName.length() == 0 ||
+                secretText == null || secretText.length() == 0) {
+            logger.log(Level.WARNING, "Invalid secret data, secretName: " +
+                    secretName + " secretText is null: " + (secretText == null) +
+                    " secretText is empty: " +
+                    (secretText != null ? secretText.length() == 0 : false));
+            return null;
+
+        }
+        return new StringCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, SecretBytes.fromString(secretText));
     }
 
     private static Credentials newCertificateCredential(String secretName, String passwordData, String certificateData) {
