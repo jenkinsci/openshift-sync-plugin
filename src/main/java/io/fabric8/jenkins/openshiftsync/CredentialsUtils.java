@@ -265,12 +265,13 @@ public class CredentialsUtils {
 
             logger.log(
                     Level.WARNING,
-                    "Opaque secret {0} either requires {1} and {2} fields for basic auth; {3} field for SSH key; {4} field for file or {5} field for certificate credential",
+                    "Opaque secret {0} either requires {1} and {2} fields for basic auth; {3} field for SSH key; {4} field for file; {5} field for certificate credential or {6} field for secret text",
                     new Object[] { secretName, OPENSHIFT_SECRETS_DATA_USERNAME,
                             OPENSHIFT_SECRETS_DATA_PASSWORD,
                             OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY,
                             OPENSHIFT_SECRETS_DATA_FILENAME,
-                            OPENSHIFT_SECRETS_DATA_CERTIFICATE});
+                            OPENSHIFT_SECRETS_DATA_CERTIFICATE,
+                            OPENSHIFT_SECRETS_DATA_SECRET_TEXT});
             return null;
         case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
             return newUsernamePasswordCredentials(secretName,
