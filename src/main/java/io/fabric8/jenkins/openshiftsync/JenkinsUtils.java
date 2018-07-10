@@ -221,7 +221,7 @@ public class JenkinsUtils {
 						BooleanParameterDefinition bpd = (BooleanParameterDefinition) param;
 						envVarList.add(bpd.getDefaultParameterValue());
 						break;
-					case "ChoiceParameterDefintion":
+					case "ChoiceParameterDefinition":
 						ChoiceParameterDefinition cpd = (ChoiceParameterDefinition) param;
 						envVarList.add(cpd.getDefaultParameterValue());
 						break;
