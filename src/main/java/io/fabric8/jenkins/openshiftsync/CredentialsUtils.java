@@ -19,6 +19,7 @@ import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl;
+import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -257,15 +258,20 @@ public class CredentialsUtils {
             if (isNotBlank(certificateDate)) {
                 return newCertificateCredential(secretName, passwordData, certificateDate);
             }
+            String secretTextData = data.get(OPENSHIFT_SECRETS_DATA_SECRET_TEXT);
+            if (isNotBlank(secretTextData)) {
+                return newSecretTextCredential(secretName, secretTextData);
+            }
 
             logger.log(
                     Level.WARNING,
-                    "Opaque secret {0} either requires {1} and {2} fields for basic auth; {3} field for SSH key; {4} field for file or {5} field for certificate credential",
+                    "Opaque secret {0} either requires {1} and {2} fields for basic auth; {3} field for SSH key; {4} field for file; {5} field for certificate credential or {6} field for secret text",
                     new Object[] { secretName, OPENSHIFT_SECRETS_DATA_USERNAME,
                             OPENSHIFT_SECRETS_DATA_PASSWORD,
                             OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY,
                             OPENSHIFT_SECRETS_DATA_FILENAME,
-                            OPENSHIFT_SECRETS_DATA_CERTIFICATE});
+                            OPENSHIFT_SECRETS_DATA_CERTIFICATE,
+                            OPENSHIFT_SECRETS_DATA_SECRET_TEXT});
             return null;
         case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
             return newUsernamePasswordCredentials(secretName,
@@ -293,6 +299,19 @@ public class CredentialsUtils {
 
         }
         return new FileCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, secretName, SecretBytes.fromString(fileData));
+    }
+
+    private static Credentials newSecretTextCredential(String secretName, String secretText) {
+        if (secretName == null || secretName.length() == 0 ||
+                secretText == null || secretText.length() == 0) {
+            logger.log(Level.WARNING, "Invalid secret data, secretName: " +
+                    secretName + " secretText is null: " + (secretText == null) +
+                    " secretText is empty: " +
+                    (secretText != null ? secretText.length() == 0 : false));
+            return null;
+
+        }
+        return new StringCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, hudson.util.Secret.fromString(secretText));
     }
 
     private static Credentials newCertificateCredential(String secretName, String passwordData, String certificateData) {
