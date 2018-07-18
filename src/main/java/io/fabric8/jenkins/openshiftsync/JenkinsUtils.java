@@ -811,14 +811,18 @@ public class JenkinsUtils {
 		}
 	}
 
-	public static boolean hasPodTemplate(String name) {
+	public static boolean hasPodTemplate(PodTemplate incomingPod) {
+		String name = incomingPod.getName();
 		if (name == null)
+			return false;
+		String image = incomingPod.getImage();
+		if (image == null)
 			return false;
 		KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
 		if (kubeCloud != null) {
 			List<PodTemplate> list = kubeCloud.getTemplates();
 			for (PodTemplate pod : list) {
-				if (name.equals(pod.getName()))
+				if (name.equals(pod.getName()) && image.equals(pod.getImage()))
 					return true;
 			}
 		}

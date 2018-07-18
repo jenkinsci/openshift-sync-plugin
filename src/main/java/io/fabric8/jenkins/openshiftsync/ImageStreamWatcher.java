@@ -119,8 +119,10 @@ public class ImageStreamWatcher extends BaseWatcher {
                 for (PodTemplate entry : slavesFromIS) {
                     // timer might beat watch event - put call is technically
                     // fine, but
-                    // not addPodTemplate given k8s plugin issues
-                    if (JenkinsUtils.hasPodTemplate(entry.getName()))
+                    // not addPodTemplate given k8s plugin issues;
+                	// also, this check includes seeing if the image 
+                	// has changed
+                    if (JenkinsUtils.hasPodTemplate(entry))
                         continue;
                     if (this.predefinedOpenShiftSlaves
                             .contains(entry.getName()))
@@ -134,6 +136,12 @@ public class ImageStreamWatcher extends BaseWatcher {
                 for (PodTemplate entry : slavesFromIS) {
                     if (this.predefinedOpenShiftSlaves
                             .contains(entry.getName()))
+                        continue;
+                	// this check includes seeing if the image 
+                	// has changed, in case a scheduled import 
+                    // has changed the image streams metadata, but 
+                    // not the image itself
+                    if (JenkinsUtils.hasPodTemplate(entry))
                         continue;
                     JenkinsUtils.addPodTemplate(entry);
                 }
@@ -212,7 +220,7 @@ public class ImageStreamWatcher extends BaseWatcher {
                         // watch event might beat the timer - put call is
                         // technically fine, but
                         // not addPodTemplate given k8s plugin issues
-                        if (JenkinsUtils.hasPodTemplate(entry.getName()))
+                        if (JenkinsUtils.hasPodTemplate(entry))
                             continue;
                         JenkinsUtils.addPodTemplate(entry);
                     }
