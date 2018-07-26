@@ -311,7 +311,8 @@ public class CredentialsUtils {
             return null;
 
         }
-        return new StringCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName, hudson.util.Secret.fromString(secretText));
+        return new StringCredentialsImpl(CredentialsScope.GLOBAL, secretName, secretName,
+            hudson.util.Secret.fromString(new String(Base64.decode(secretText), StandardCharsets.UTF_8)));
     }
 
     private static Credentials newCertificateCredential(String secretName, String passwordData, String certificateData) {
