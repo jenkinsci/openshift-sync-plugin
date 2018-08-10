@@ -204,7 +204,8 @@ public class JenkinsUtils {
 			// build list of env var keys for compare with existing job params
 			for (EnvVar env : envs) {
 				envKeys.add(env.getName());
-				envVarList.add(new StringParameterValue(env.getName(), env.getValue()));
+        // Convert null value to empty string.
+        envVarList.add(new StringParameterValue(env.getName(), env.getValue() != null ? env.getValue() : ""));
 			}
 		}
 
@@ -287,7 +288,8 @@ public class JenkinsUtils {
 		if (envs.size() > 0) {
 			// build list of env var keys for compare with existing job params
 			for (EnvVar env : envs) {
-				envVarList.add(new StringParameterValue(env.getName(), env.getValue()));
+        // Convert null value to empty string.
+        envVarList.add(new StringParameterValue(env.getName(), env.getValue() != null ? env.getValue() : ""));
 			}
 		}
 
@@ -585,12 +587,12 @@ public class JenkinsUtils {
 			return null;
 		}
 
-		WorkflowJob job = BuildConfigToJobMap.getJobFromBuildConfigNameNamespace(buildConfigName, 
+		WorkflowJob job = BuildConfigToJobMap.getJobFromBuildConfigNameNamespace(buildConfigName,
 		        build.getMetadata().getNamespace());
 		if (job != null) {
 		    return job;
 		}
-		
+
 		BuildConfig buildConfig = getAuthenticatedOpenShiftClient().buildConfigs()
 				.inNamespace(build.getMetadata().getNamespace()).withName(buildConfigName).get();
 		if (buildConfig == null) {
