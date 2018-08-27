@@ -69,6 +69,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -284,20 +285,24 @@ public class JenkinsUtils {
 	public static List<Action> setJobRunParamsFromEnvAndUIParams(WorkflowJob job, JenkinsPipelineBuildStrategy strat,
 			List<Action> buildActions, ParametersAction params) {
 		List<EnvVar> envs = strat.getEnv();
-		List<ParameterValue> envVarList = new ArrayList<ParameterValue>();
+		Map<String, ParameterValue> envVarMap = new LinkedHashMap<>(envs.size());
 		if (envs.size() > 0) {
-			// build list of env var keys for compare with existing job params
+			// build map of env vars for compare with existing job params
 			for (EnvVar env : envs) {
-        // Convert null value to empty string.
-        envVarList.add(new StringParameterValue(env.getName(), env.getValue() != null ? env.getValue() : ""));
+				// Convert null value to empty string.
+				ParameterValue param = new StringParameterValue(env.getName(), env.getValue() != null ? env.getValue() : "");
+				envVarMap.put(env.getName(), param);
 			}
 		}
 
-		if (params != null)
-			envVarList.addAll(params.getParameters());
+		if (params != null) {
+			for (ParameterValue userParam : params.getParameters()) {
+				envVarMap.put(userParam.getName(), userParam);
+			}
+		}
 
-		if (envVarList.size() > 0)
-			buildActions.add(new ParametersAction(envVarList));
+		if (envVarMap.size() > 0)
+			buildActions.add(new ParametersAction(new ArrayList<>(envVarMap.values())));
 
 		return buildActions;
 	}
