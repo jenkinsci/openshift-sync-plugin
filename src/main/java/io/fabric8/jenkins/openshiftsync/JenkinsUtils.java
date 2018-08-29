@@ -175,7 +175,7 @@ public class JenkinsUtils {
 			}
 			for (EnvVar env : envs) {
 				if (replaceExisting) {
-					StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), env.getValue(),
+					StringParameterDefinition envVar = new StringParameterDefinition(env.getName(), env.getValue() != null ? env.getValue() : "",
 							PARAM_FROM_ENV_DESCRIPTION);
 					paramMap.put(env.getName(), envVar);
 				} else if (!paramMap.containsKey(env.getName())) {
