@@ -5,6 +5,8 @@ import com.cloudbees.plugins.credentials.*;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl;
 
 import hudson.model.Fingerprint;
@@ -227,7 +229,7 @@ public class CredentialsUtils {
     private static Credentials secretToCredentials(Secret secret) {
         String namespace = secret.getMetadata().getNamespace();
         String name = secret.getMetadata().getName();
-        final Map<String, String> data = secret.getData();
+        Map<String, String> data = secret.getData();
 
         if (data == null) {
             logger.log(
@@ -281,10 +283,18 @@ public class CredentialsUtils {
             return newSSHUserCredential(secretName,
                     data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
                     data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY));
-        default:
-            logger.log(Level.WARNING,
-                    "Unknown secret type: " + secret.getType());
-            return null;
+		default:
+			// the type field is marked optional in k8s.io/api/core/v1/types.go,
+			// default to OPENSHIFT_SECRETS_DATA_SECRET_TEXT in this case
+			String text = "";
+			if (data != null && data.size() > 0) {
+				// convert to JSON for parsing ease in pipelines
+				try {
+					text = new ObjectMapper().writeValueAsString(data);
+				} catch (JsonProcessingException e) {
+				}
+			}
+			return newSecretTextCredential(secretName, text);
         }
     }
 
