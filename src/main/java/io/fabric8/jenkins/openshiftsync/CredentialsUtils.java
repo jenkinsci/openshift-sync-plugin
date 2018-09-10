@@ -199,6 +199,18 @@ public class CredentialsUtils {
 		return namespace + "-" + name;
 	}
 
+    private static Credentials arbitraryKeyValueTextCredential(Map<String, String> data, String secretName) {
+        String text = "";
+        if (data != null && data.size() > 0) {
+            // convert to JSON for parsing ease in pipelines
+            try {
+                text = new ObjectMapper().writeValueAsString(data);
+            } catch (JsonProcessingException e) {
+            }
+        }
+        return newSecretTextCredential(secretName, text);
+    }
+
 	private static Credentials secretToCredentials(Secret secret) {
 		String namespace = secret.getMetadata().getNamespace();
 		String name = secret.getMetadata().getName();
@@ -234,13 +246,9 @@ public class CredentialsUtils {
 			if (isNotBlank(secretTextData)) {
 				return newSecretTextCredential(secretName, secretTextData);
 			}
+			
+			return arbitraryKeyValueTextCredential(data, secretName);
 
-			logger.log(Level.WARNING,
-					"Opaque secret {0} either requires {1} and {2} fields for basic auth; {3} field for SSH key; {4} field for file; {5} field for certificate credential or {6} field for secret text",
-					new Object[] { secretName, OPENSHIFT_SECRETS_DATA_USERNAME, OPENSHIFT_SECRETS_DATA_PASSWORD,
-							OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY, OPENSHIFT_SECRETS_DATA_FILENAME,
-							OPENSHIFT_SECRETS_DATA_CERTIFICATE, OPENSHIFT_SECRETS_DATA_SECRET_TEXT });
-			return null;
 		case OPENSHIFT_SECRETS_TYPE_BASICAUTH:
 			return newUsernamePasswordCredentials(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
 					data.get(OPENSHIFT_SECRETS_DATA_PASSWORD));
@@ -250,15 +258,7 @@ public class CredentialsUtils {
 		default:
 			// the type field is marked optional in k8s.io/api/core/v1/types.go,
 			// default to OPENSHIFT_SECRETS_DATA_SECRET_TEXT in this case
-			String text = "";
-			if (data != null && data.size() > 0) {
-				// convert to JSON for parsing ease in pipelines
-				try {
-					text = new ObjectMapper().writeValueAsString(data);
-				} catch (JsonProcessingException e) {
-				}
-			}
-			return newSecretTextCredential(secretName, text);
+			return arbitraryKeyValueTextCredential(data, secretName);
 		}
 	}
 
