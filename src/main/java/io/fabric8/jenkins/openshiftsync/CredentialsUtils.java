@@ -206,7 +206,16 @@ public class CredentialsUtils {
             try {
                 text = new ObjectMapper().writeValueAsString(data);
             } catch (JsonProcessingException e) {
+                logger.log(Level.WARNING, "Arbitrary opaque secret " + secretName + " had issue converting json", e);
             }
+        }
+        if (StringUtils.isBlank(text)) {
+            logger.log(
+                    Level.WARNING,
+                    "Opaque secret {0} did not provide any data that could be processed into a Jenkins credential",
+                    new Object[] { secretName });
+
+            return null;
         }
         return newSecretTextCredential(secretName, text);
     }
