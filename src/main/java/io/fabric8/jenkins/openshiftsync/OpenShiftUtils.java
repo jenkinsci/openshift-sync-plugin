@@ -255,7 +255,7 @@ public class OpenShiftUtils {
             return jobName;
         }
         if (GlobalPluginConfiguration.get().getFoldersEnabled()) {
-          return getNamespace(bc) + "/" + getName(bc);
+          return getNamespace(bc) + "/" + jenkinsJobName(getNamespace(bc), getName(bc));
         } else {
           return getName(bc);
         }
