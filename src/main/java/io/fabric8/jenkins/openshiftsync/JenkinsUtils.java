@@ -16,6 +16,8 @@
 package io.fabric8.jenkins.openshiftsync;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.AbortException;
+import hudson.BulkChange;
 import hudson.model.Action;
 import hudson.model.ParameterDefinition;
 import hudson.model.ParameterValue;
@@ -24,6 +26,7 @@ import hudson.model.Cause;
 import hudson.model.CauseAction;
 import hudson.model.ChoiceParameterDefinition;
 import hudson.model.FileParameterDefinition;
+import hudson.model.ItemGroup;
 import hudson.model.Job;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
@@ -37,6 +40,7 @@ import hudson.plugins.git.RevisionParameterAction;
 import hudson.security.ACL;
 import hudson.slaves.Cloud;
 import hudson.triggers.SafeTimerTask;
+import hudson.util.XStream2;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Pod;
@@ -52,16 +56,20 @@ import jenkins.security.NotReallyRoleSensitiveCallable;
 import jenkins.util.Timer;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.tools.ant.filters.StringInputStream;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import org.csanchez.jenkins.plugins.kubernetes.PodVolumes;
 import org.eclipse.jgit.transport.URIish;
+import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
+import com.cloudbees.hudson.plugins.folder.Folder;
 import com.cloudbees.plugins.credentials.CredentialsParameterDefinition;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -74,8 +82,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.xml.transform.Source;
+import javax.xml.transform.stream.StreamSource;
+
+import static io.fabric8.jenkins.openshiftsync.Annotations.DISABLE_SYNC_CREATE;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.getJobFromBuildConfig;
 import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMap.putJobWithBuildConfig;
+import static io.fabric8.jenkins.openshiftsync.BuildConfigToJobMapper.mapBuildConfigToFlow;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.CANCELLED;
 import static io.fabric8.jenkins.openshiftsync.BuildPhases.PENDING;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
@@ -85,10 +98,20 @@ import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_ANNOTATIONS_B
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.updateJob;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAnnotation;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getAuthenticatedOpenShiftClient;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getFullNameParent;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getName;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.getNamespace;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancellable;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isCancelled;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.isNew;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobDisplayName;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobFullName;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobName;
+import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBuildPhase;
 import static java.util.Collections.sort;
 import static java.util.logging.Level.SEVERE;
@@ -119,28 +142,72 @@ public class JenkinsUtils {
 		return root;
 	}
 
-	public static boolean verifyEnvVars(Map<String, ParameterDefinition> paramMap, WorkflowJob workflowJob) {
-        if (paramMap != null) {
-            String fullName = workflowJob.getFullName();
-            WorkflowJob job = Jenkins.getActiveInstance()
-                    .getItemByFullName(fullName,
-                            WorkflowJob.class);
-            if (job == null) {
-                // this should not occur if an impersonate call has been made higher up
-                // the stack
-                LOGGER.warning("A run of workflow job " + workflowJob.getName() + " unexpectantly not saved to disk.");
-                return false;
-            }
-            ParametersDefinitionProperty props = job.getProperty(ParametersDefinitionProperty.class);
-            List<String> names = props.getParameterDefinitionNames();
-            for (String name : names) {
-                if (!paramMap.containsKey(name)) {
-                    LOGGER.warning("A run of workflow job " + job.getName() + " was expecting parameter " + name + ", but it is not in the parameter list");
-                    return false;
+	public static void verifyEnvVars(Map<String, ParameterDefinition> paramMap, WorkflowJob workflowJob, BuildConfig buildConfig) throws AbortException {
+	    boolean rc;
+        try {
+            ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
+                @Override
+                public Void call() throws Exception {
+                    if (paramMap != null) {
+                        String fullName = workflowJob.getFullName();
+                        WorkflowJob job = null;
+                        long now = System.currentTimeMillis();
+                        boolean anyErrors = false;
+                        do {
+                            job = Jenkins.getActiveInstance()
+                                    .getItemByFullName(fullName,
+                                            WorkflowJob.class);
+                            
+                            if (job != null) {
+                                if (anyErrors)
+                                    LOGGER.info("finally found workflow job for " + job.getFullName());
+                                break;
+                            }
+                            
+                            anyErrors = true;
+                            // this should not occur if an impersonate call has been made higher up
+                            // the stack
+                            LOGGER.warning("A run of workflow job " + workflowJob.getName() + " via fullname " + workflowJob.getFullName() + " unexpectantly not saved to disk.");
+                            List<WorkflowJob> jobList = Jenkins.getActiveInstance().getAllItems(WorkflowJob.class);
+                            String jobNames = "";
+                            for (WorkflowJob j : jobList) {
+                                jobNames = jobNames + j.getFullName();
+                            }
+                            LOGGER.warning("The current list of full job names: " + jobNames);
+
+                            try {
+                                Thread.sleep(50l);
+                            } catch (Throwable t) {
+                                break;
+                            }
+                        } while ((System.currentTimeMillis() - 5000) > now);
+                        if (job == null) {
+                            // seen instances where if we throw exception immediately we lose our 
+                            // most recent logger updates
+                            try {
+                                Thread.sleep(1000);
+                            } catch (Throwable t) {
+                                
+                            }
+                            throw new AbortException("workflow job " + workflowJob.getName() + " via fullname " + workflowJob.getFullName() + " could not be found ");
+                        }
+                        ParametersDefinitionProperty props = job.getProperty(ParametersDefinitionProperty.class);
+                        List<String> names = props.getParameterDefinitionNames();
+                        for (String name : names) {
+                            if (!paramMap.containsKey(name)) {
+                                throw new AbortException("A run of workflow job " + job.getName() + " was expecting parameter " + name + ", but it is not in the parameter list");
+                            }
+                        }
+                    }
+                    return null;
                 }
-            }
+            });
+            
+        } catch (Exception e) {
+            if (e instanceof AbortException)
+                throw (AbortException)e;
+            throw new AbortException(e.getMessage());
         }
-	    return true;
 	}
 
 	public static Map<String, ParameterDefinition> addJobParamForBuildEnvs(WorkflowJob job, JenkinsPipelineBuildStrategy strat,
@@ -192,7 +259,8 @@ public class JenkinsUtils {
 			job.addProperty(new ParametersDefinitionProperty(newParamList));
 		}
 		// force save here ... seen some timing issues with concurrent job updates and run initiations
-		job.save();
+        InputStream jobStream = new StringInputStream(new XStream2().toXML(job));
+		updateJob(job, jobStream, null, null);
 		return paramMap;
 	}
 
@@ -408,7 +476,7 @@ public class JenkinsUtils {
             // config envs
             Map<String, ParameterDefinition> paramMap = addJobParamForBuildEnvs(
                     job, strat, false);
-            verifyEnvVars(paramMap, job);
+            verifyEnvVars(paramMap, job, buildConfig);
             if (userProvidedParams == null) {
                 LOGGER.fine("setting all job run params since this was either started via oc, or started from the UI "
                         + "with no build parameters");
@@ -605,6 +673,26 @@ public class JenkinsUtils {
 		}
 		return getJobFromBuildConfig(buildConfig);
 	}
+
+    public static void updateJob(WorkflowJob job, InputStream jobStream, String existingBuildRunPolicy, BuildConfigProjectProperty buildConfigProjectProperty) throws IOException {
+        try {
+            ACL.impersonate(ACL.SYSTEM, new NotReallyRoleSensitiveCallable<Void, Exception>() {
+                @Override
+                public Void call() throws Exception {
+                    Source source = new StreamSource(jobStream);
+                    job.updateByXml(source);
+                    job.save();
+                    if (existingBuildRunPolicy != null && buildConfigProjectProperty != null && !existingBuildRunPolicy.equals(buildConfigProjectProperty.getBuildRunPolicy())) {
+                        maybeScheduleNext(job);
+                    }
+                    return null;
+                }
+            });
+            
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
+    }
 
 	public static void maybeScheduleNext(WorkflowJob job) {
 		BuildConfigProjectProperty bcp = job.getProperty(BuildConfigProjectProperty.class);
