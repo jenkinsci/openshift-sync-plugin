@@ -38,10 +38,6 @@ import org.eclipse.jetty.util.ConcurrentHashSet;
 import org.jenkinsci.plugins.workflow.flow.FlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
-import javax.xml.transform.Source;
-import javax.xml.transform.stream.StreamSource;
-
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
@@ -59,7 +55,7 @@ import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL;
 import static io.fabric8.jenkins.openshiftsync.BuildRunPolicy.SERIAL_LATEST_ONLY;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_BUILD_STATUS_FIELD;
 import static io.fabric8.jenkins.openshiftsync.Constants.OPENSHIFT_LABELS_BUILD_CONFIG_NAME;
-import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.maybeScheduleNext;
+import static io.fabric8.jenkins.openshiftsync.JenkinsUtils.updateJob;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.*;
 import static java.util.logging.Level.SEVERE;
 
@@ -235,16 +231,6 @@ public class BuildConfigWatcher extends BaseWatcher {
         eventReceived(action, bc);
     }
 
-    private void updateJob(WorkflowJob job, InputStream jobStream, String jobName, BuildConfig buildConfig, String existingBuildRunPolicy, BuildConfigProjectProperty buildConfigProjectProperty) throws IOException {
-        Source source = new StreamSource(jobStream);
-        job.updateByXml(source);
-        job.save();
-        logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
-        if (existingBuildRunPolicy != null && !existingBuildRunPolicy.equals(buildConfigProjectProperty.getBuildRunPolicy())) {
-            maybeScheduleNext(job);
-        }
-    }
-
     private void upsertJob(final BuildConfig buildConfig) throws Exception {
         if (isPipelineStrategyBuildConfig(buildConfig)) {
             // sync on intern of name should guarantee sync on same actual obj
@@ -328,10 +314,12 @@ public class BuildConfigWatcher extends BaseWatcher {
                                 // newJob check above and when we make
                                 // the createProjectFromXML call; if so,
                                 // retry as an update
-                                updateJob(job, jobStream, jobName, buildConfig, existingBuildRunPolicy, buildConfigProjectProperty);
+                                updateJob(job, jobStream, existingBuildRunPolicy, buildConfigProjectProperty);
+                                logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
                             }
                         } else {
-                            updateJob(job, jobStream, jobName, buildConfig, existingBuildRunPolicy, buildConfigProjectProperty);
+                            updateJob(job, jobStream, existingBuildRunPolicy, buildConfigProjectProperty);
+                            logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig) + " with revision: " + buildConfig.getMetadata().getResourceVersion());
                         }
                         bk.commit();
                         String fullName = job.getFullName();
@@ -348,7 +336,7 @@ public class BuildConfigWatcher extends BaseWatcher {
                         if (workflowJob == null) {
                             logger.warning("Could not find created job " + fullName + " for BuildConfig: " + getNamespace(buildConfig) + "/" + getName(buildConfig));
                         } else {
-                            JenkinsUtils.verifyEnvVars(paramMap, workflowJob);
+                            JenkinsUtils.verifyEnvVars(paramMap, workflowJob, buildConfig);
                             putJobWithBuildConfig(workflowJob, buildConfig);
                         }
                         return null;
