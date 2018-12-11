@@ -535,18 +535,29 @@ public class JenkinsUtils {
 
 	private static WorkflowRun getRun(WorkflowJob job, Build build) {
 		if (build != null && build.getMetadata() != null) {
-			return getRun(job, build.getMetadata().getUid());
+			return getRun(job, build.getMetadata().getUid(), 0);
 		}
 		return null;
 	}
 
-	private static WorkflowRun getRun(WorkflowJob job, String buildUid) {
-		for (WorkflowRun run : job.getBuilds()) {
-			BuildCause cause = run.getCause(BuildCause.class);
-			if (cause != null && cause.getUid().equals(buildUid)) {
-				return run;
-			}
-		}
+	private static WorkflowRun getRun(WorkflowJob job, String buildUid, int retry) {
+	    try {
+	        for (WorkflowRun run : job.getBuilds()) {
+	            BuildCause cause = run.getCause(BuildCause.class);
+	            if (cause != null && cause.getUid().equals(buildUid)) {
+	                return run;
+	            }
+	        }
+	    } catch (Throwable t) {
+	        if (retry == 0) {
+	            try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                }
+	            return getRun(job, buildUid, 1);
+	        }
+	        LOGGER.log(Level.WARNING, "Jenkins unavailability accessing job run; have to assume it does not exist", t);
+	    }
 		return null;
 	}
 
@@ -566,7 +577,7 @@ public class JenkinsUtils {
 
 	private static boolean cancelRunningBuild(WorkflowJob job, Build build) {
 		String buildUid = build.getMetadata().getUid();
-		WorkflowRun run = getRun(job, buildUid);
+		WorkflowRun run = getRun(job, buildUid, 0);
 		if (run != null && run.isBuilding()) {
 			terminateRun(run);
 			return true;
@@ -576,7 +587,7 @@ public class JenkinsUtils {
 
 	private static boolean cancelNotYetStartedBuild(WorkflowJob job, Build build) {
 		String buildUid = build.getMetadata().getUid();
-		WorkflowRun run = getRun(job, buildUid);
+		WorkflowRun run = getRun(job, buildUid, 0);
 		if (run != null && run.hasntStartedYet()) {
 			terminateRun(run);
 			return true;
