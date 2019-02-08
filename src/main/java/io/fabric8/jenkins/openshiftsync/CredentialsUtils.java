@@ -243,7 +243,7 @@ public class CredentialsUtils {
             }
             String sshKeyData = data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY);
             if (isNotBlank(sshKeyData)) {
-                return newSSHUserCredential(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME), sshKeyData);
+                return newSSHUserCredential(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME), sshKeyData, data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY_PASSPHRASE));
             }
             String fileData = data.get(OPENSHIFT_SECRETS_DATA_FILENAME);
             if (isNotBlank(fileData)) {
@@ -269,7 +269,7 @@ public class CredentialsUtils {
                     data.get(OPENSHIFT_SECRETS_DATA_PASSWORD));
         case OPENSHIFT_SECRETS_TYPE_SSH:
             return newSSHUserCredential(secretName, data.get(OPENSHIFT_SECRETS_DATA_USERNAME),
-                    data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY));
+                    data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY), data.get(OPENSHIFT_SECRETS_DATA_SSHPRIVATEKEY_PASSPHRASE));
         default:
             // the type field is marked optional in k8s.io/api/core/v1/types.go,
             // default to OPENSHIFT_SECRETS_DATA_SECRET_TEXT in this case
@@ -329,7 +329,7 @@ public class CredentialsUtils {
                 new CertificateCredentialsImpl.UploadedKeyStoreSource(SecretBytes.fromString(certificateData)));
     }
 
-    private static Credentials newSSHUserCredential(String secretName, String username, String sshKeyData) {
+    private static Credentials newSSHUserCredential(String secretName, String username, String sshKeyData, String passphrase) {
         if (secretName == null || secretName.length() == 0 || sshKeyData == null || sshKeyData.length() == 0) {
             logger.log(Level.WARNING,
                     "Invalid secret data, secretName: " + secretName + " sshKeyData is null: " + (sshKeyData == null)
@@ -341,7 +341,7 @@ public class CredentialsUtils {
                 fixNull(username).isEmpty() ? "" : new String(Base64.decode(username), StandardCharsets.UTF_8),
                 new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
                         new String(Base64.decode(sshKeyData), StandardCharsets.UTF_8)),
-                null, secretName);
+                passphrase, secretName);
     }
 
     private static Credentials newUsernamePasswordCredentials(String secretName, String usernameData,
