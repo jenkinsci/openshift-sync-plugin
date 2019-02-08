@@ -341,7 +341,7 @@ public class CredentialsUtils {
                 fixNull(username).isEmpty() ? "" : new String(Base64.decode(username), StandardCharsets.UTF_8),
                 new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
                         new String(Base64.decode(sshKeyData), StandardCharsets.UTF_8)),
-                passphrase, secretName);
+                new String(Base64.decode(passphrase), StandardCharsets.UTF_8), secretName);
     }
 
     private static Credentials newUsernamePasswordCredentials(String secretName, String usernameData,
