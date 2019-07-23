@@ -17,6 +17,7 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobFullName
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.jenkinsJobName;
 import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.parseResourceVersion;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -81,26 +82,7 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 		String existingBuildRunPolicy = null;
 
 		BuildConfigProjectProperty buildConfigProjectProperty = job.getProperty(BuildConfigProjectProperty.class);
-		if (buildConfigProjectProperty != null) {
-			existingBuildRunPolicy = buildConfigProjectProperty.getBuildRunPolicy();
-			long updatedBCResourceVersion = parseResourceVersion(buildConfig);
-			long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
-			BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
-			if (updatedBCResourceVersion <= oldBCResourceVersion
-					&& newProperty.getUid().equals(buildConfigProjectProperty.getUid())
-					&& newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace())
-					&& newProperty.getName().equals(buildConfigProjectProperty.getName())
-					&& newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())) {
-				return null;
-			}
-			buildConfigProjectProperty.setUid(newProperty.getUid());
-			buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
-			buildConfigProjectProperty.setName(newProperty.getName());
-			buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
-			buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
-		} else {
-			job.addProperty(new BuildConfigProjectProperty(buildConfig));
-		}
+		existingBuildRunPolicy = populateBCProjectProperty(job, existingBuildRunPolicy, buildConfigProjectProperty);
 
 		// (re)populate job param list with any envs
 		// from the build config
@@ -160,6 +142,31 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 			putJobWithBuildConfig(workflowJob, buildConfig);
 		}
 		return null;
+	}
+
+	private String populateBCProjectProperty(WorkflowJob job, String existingBuildRunPolicy,
+			BuildConfigProjectProperty buildConfigProjectProperty) throws IOException {
+		if (buildConfigProjectProperty != null) {
+			existingBuildRunPolicy = buildConfigProjectProperty.getBuildRunPolicy();
+			long updatedBCResourceVersion = parseResourceVersion(buildConfig);
+			long oldBCResourceVersion = parseResourceVersion(buildConfigProjectProperty.getResourceVersion());
+			BuildConfigProjectProperty newProperty = new BuildConfigProjectProperty(buildConfig);
+			if (updatedBCResourceVersion <= oldBCResourceVersion
+					&& newProperty.getUid().equals(buildConfigProjectProperty.getUid())
+					&& newProperty.getNamespace().equals(buildConfigProjectProperty.getNamespace())
+					&& newProperty.getName().equals(buildConfigProjectProperty.getName())
+					&& newProperty.getBuildRunPolicy().equals(buildConfigProjectProperty.getBuildRunPolicy())) {
+				return null;
+			}
+			buildConfigProjectProperty.setUid(newProperty.getUid());
+			buildConfigProjectProperty.setNamespace(newProperty.getNamespace());
+			buildConfigProjectProperty.setName(newProperty.getName());
+			buildConfigProjectProperty.setResourceVersion(newProperty.getResourceVersion());
+			buildConfigProjectProperty.setBuildRunPolicy(newProperty.getBuildRunPolicy());
+		} else {
+			job.addProperty(new BuildConfigProjectProperty(buildConfig));
+		}
+		return existingBuildRunPolicy;
 	}
 
 }
