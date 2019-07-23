@@ -40,7 +40,7 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 
 	private final BuildConfigWatcher jobProcessor;
 	private final BuildConfig buildConfig;
-  private final static Logger logger = Logger.getLogger(BuildConfigToJobMap.class.getName());
+    private final static Logger logger = Logger.getLogger(BuildConfigToJobMap.class.getName());
 
 	public JobProcessor(BuildConfigWatcher buildConfigWatcher, BuildConfig buildConfig) {
 		jobProcessor = buildConfigWatcher;
