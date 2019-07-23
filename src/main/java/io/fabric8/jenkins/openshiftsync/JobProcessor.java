@@ -67,7 +67,7 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 			parent = getFullNameParent(activeInstance, jobFullName, getNamespace(buildConfig));
 			job = new WorkflowJob(parent, jobName);
 		}
-		BulkChange bk = new BulkChange(job);
+		BulkChange bulkJob = new BulkChange(job);
 
 		job.setDisplayName(jenkinsJobDisplayName(buildConfig));
 
@@ -140,7 +140,7 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 			logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig)
 					+ " with revision: " + buildConfig.getMetadata().getResourceVersion());
 		}
-		bk.commit();
+		bulkJob.commit();
 		String fullName = job.getFullName();
 		WorkflowJob workflowJob = activeInstance.getItemByFullName(fullName, WorkflowJob.class);
 		if (workflowJob == null && parent instanceof Folder) {
