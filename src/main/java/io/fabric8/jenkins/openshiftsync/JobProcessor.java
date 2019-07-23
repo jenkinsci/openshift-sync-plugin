@@ -28,6 +28,7 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import com.cloudbees.hudson.plugins.folder.Folder;
 
+import hudson.AbortException;
 import hudson.BulkChange;
 import hudson.model.ItemGroup;
 import hudson.model.ParameterDefinition;
@@ -49,15 +50,18 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 
 	@Override
 	public Void call() throws Exception {
+		Jenkins activeInstance = Jenkins.getActiveInstance();
+		ItemGroup parent = activeInstance;
+		
 		String jobName = jenkinsJobName(buildConfig);
 		String jobFullName = jenkinsJobFullName(buildConfig);
 		WorkflowJob job = getJobFromBuildConfig(buildConfig);
-		Jenkins activeInstance = Jenkins.getActiveInstance();
-		ItemGroup parent = activeInstance;
+		
 		if (job == null) {
 			job = (WorkflowJob) activeInstance.getItemByFullName(jobFullName);
 		}
 		boolean newJob = job == null;
+		
 		if (newJob) {
 			String disableOn = getAnnotation(buildConfig, DISABLE_SYNC_CREATE);
 			if (disableOn != null && disableOn.length() > 0) {
@@ -76,7 +80,37 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 		if (flowFromBuildConfig == null) {
 			return null;
 		}
+		Map<String, ParameterDefinition> paramMap = createOrUpdateJob(activeInstance, parent, jobName, job, newJob,
+				flowFromBuildConfig);
+		bulkJob.commit();
+		populateNamespaceFolder(activeInstance, parent, jobName, job, paramMap);
+		return null;
+	}
 
+	private void populateNamespaceFolder(Jenkins activeInstance, ItemGroup parent, String jobName, WorkflowJob job,
+			Map<String, ParameterDefinition> paramMap) throws IOException, AbortException {
+		String fullName = job.getFullName();
+		WorkflowJob workflowJob = activeInstance.getItemByFullName(fullName, WorkflowJob.class);
+		if (workflowJob == null && parent instanceof Folder) {
+			// we should never need this but just in
+			// case there's an
+			// odd timing issue or something...
+			Folder folder = (Folder) parent;
+			folder.add(job, jobName);
+			workflowJob = activeInstance.getItemByFullName(fullName, WorkflowJob.class);
+
+		}
+		if (workflowJob == null) {
+			logger.warning("Could not find created job " + fullName + " for BuildConfig: " + getNamespace(buildConfig)
+					+ "/" + getName(buildConfig));
+		} else {
+			JenkinsUtils.verifyEnvVars(paramMap, workflowJob, buildConfig);
+			putJobWithBuildConfig(workflowJob, buildConfig);
+		}
+	}
+
+	private Map<String, ParameterDefinition> createOrUpdateJob(Jenkins activeInstance, ItemGroup parent, String jobName,
+			WorkflowJob job, boolean newJob, FlowDefinition flowFromBuildConfig) throws IOException {
 		job.setDefinition(flowFromBuildConfig);
 
 		String existingBuildRunPolicy = null;
@@ -122,26 +156,7 @@ public class JobProcessor extends NotReallyRoleSensitiveCallable<Void, Exception
 			logger.info("Updated job " + jobName + " from BuildConfig " + NamespaceName.create(buildConfig)
 					+ " with revision: " + buildConfig.getMetadata().getResourceVersion());
 		}
-		bulkJob.commit();
-		String fullName = job.getFullName();
-		WorkflowJob workflowJob = activeInstance.getItemByFullName(fullName, WorkflowJob.class);
-		if (workflowJob == null && parent instanceof Folder) {
-			// we should never need this but just in
-			// case there's an
-			// odd timing issue or something...
-			Folder folder = (Folder) parent;
-			folder.add(job, jobName);
-			workflowJob = activeInstance.getItemByFullName(fullName, WorkflowJob.class);
-
-		}
-		if (workflowJob == null) {
-			logger.warning("Could not find created job " + fullName + " for BuildConfig: " + getNamespace(buildConfig)
-					+ "/" + getName(buildConfig));
-		} else {
-			JenkinsUtils.verifyEnvVars(paramMap, workflowJob, buildConfig);
-			putJobWithBuildConfig(workflowJob, buildConfig);
-		}
-		return null;
+		return paramMap;
 	}
 
 	private String populateBCProjectProperty(WorkflowJob job, String existingBuildRunPolicy,
