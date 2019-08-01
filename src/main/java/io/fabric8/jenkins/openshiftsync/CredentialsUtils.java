@@ -102,6 +102,9 @@ public class CredentialsUtils {
 
     /**
      * Inserts or creates a Jenkins Credential for the given Secret
+     * @param secret the secret to upsert
+     * @return the upserted credential
+     * @throws IOException when the credential cannot be persisted
      */
     public static String upsertCredential(Secret secret) throws IOException {
         if (secret != null) {
