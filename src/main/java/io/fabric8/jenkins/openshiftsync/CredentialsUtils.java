@@ -43,6 +43,7 @@ import static org.apache.commons.lang.StringUtils.isNotBlank;
 public class CredentialsUtils {
 
   private final static Logger logger = Logger.getLogger(CredentialsUtils.class.getName());
+  public static final String KUBERNETES_SERVICE_ACCOUNT = "Kubernetes Service Account";
   public static ConcurrentHashMap<String, String> uidToSecretNameMap;
 
 
@@ -143,16 +144,16 @@ public class CredentialsUtils {
               NamespaceName secretNamespaceName = null;
 
               ObjectMeta metadata = secret.getMetadata();
+              String secretUid = metadata.getUid();
               if (!originalId.equals(id)) {
                 boolean hasAddedCredential = s.addCredentials(Domain.global(), creds);
                 if (!hasAddedCredential) {
-                  logger.warning("Update failed for secret with new Id " + id + " from Secret " + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
+                  logger.warning("Setting secret  failed for secret with new Id " + id + " from Secret " + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
+                  logger.warning("Check if Id "+id+" is not already used.");
                 } else {
-                  String secretUid = metadata.getUid();
                   String oldId = uidToSecretNameMap.get(secretUid);
-                  Credentials oldCredentials = lookupCredentials(oldId);
-
                   if (oldId != null) {
+                    Credentials oldCredentials = lookupCredentials(oldId);
                     s.removeCredentials(Domain.global(), oldCredentials);
                   } else if (existingOriginalCreds != null) {
                     s.removeCredentials(Domain.global(), existingOriginalCreds);
@@ -164,6 +165,7 @@ public class CredentialsUtils {
               } else {
                 if (existingCreds != null) {
                   s.updateCredentials(Domain.global(), existingCreds, creds);
+                  uidToSecretNameMap.put(secretUid, id);
                   secretNamespaceName = NamespaceName.create(secret);
                   logger.info("Updated credential " + id + " from Secret " + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
                 } else {
@@ -171,6 +173,7 @@ public class CredentialsUtils {
                   if (!hasAddedCredential) {
                     logger.warning("Update failed for secret with new Id " + id + " from Secret " + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
                   } else {
+                    uidToSecretNameMap.put(secretUid, id);
                     secretNamespaceName = NamespaceName.create(secret);
                     logger.info("Created credential " + id + " from Secret " + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
                   }
@@ -192,26 +195,21 @@ public class CredentialsUtils {
             try {
                 Fingerprint fp = CredentialsProvider.getFingerprintOf(existingCred);
                 if (fp != null && fp.getJobs().size() > 0) {
-                    // per messages in credentials console, it is not a given,
-                    // but
-                    // it is possible for job refs to a credential to be
-                    // tracked;
-                    // if so, we will not prevent deletion, but at least note
-                    // things
-                    // for potential diagnostics
+                    // per messages in credentials console, it is not a given but it is possible for job refs to a
+                    // credential to be tracked ; if so, we will not prevent deletion, but at least note things for
+                    // potential diagnostics
                     StringBuffer sb = new StringBuffer();
                     for (String job : fp.getJobs())
                         sb.append(job).append(" ");
                     logger.info("About to delete credential " + id + "which is referenced by jobs: " + sb.toString());
                 }
                 CredentialsStore s = CredentialsProvider.lookupStores(Jenkins.getActiveInstance()).iterator().next();
-              if (!existingCred.getDescriptor().getDisplayName().contains("Kubernetes Service Account")) {
+              if (!existingCred.getDescriptor().getDisplayName().contains(KUBERNETES_SERVICE_ACCOUNT)) {
                 s.removeCredentials(Domain.global(), existingCred);
-                logger.info(
-                  "Deleted credential " + id + " from Secret " + name + " with revision: " + resourceRevision);
+                logger.info("Deleted credential " + id + " from Secret " + name + " with revision: " + resourceRevision);
                 s.save();
               } else {
-                logger.warning("Stopped attempt to delete Kubernetes Service Account credentials with Id "+ id );
+                logger.warning("Stopped attempt to delete " + KUBERNETES_SERVICE_ACCOUNT + " credentials with Id " + id );
               }
             } finally {
                 SecurityContextHolder.setContext(previousContext);
