@@ -65,6 +65,8 @@ public abstract class BaseWatcher {
                                                               // milliseconds in
                 getListIntervalInSeconds() * 1000,
                 TimeUnit.MILLISECONDS);
+
+        PodTemplateUtils.propogateProxyConfigToReservedPodTemplates();
     }
 
     public void stop() {
@@ -106,7 +108,8 @@ public abstract class BaseWatcher {
         }
     }
 
-  protected void processSlavesForAddEvent(List<PodTemplate> slaves, String type, String uid, String apiObjName, String namespace) {
+    protected void processSlavesForAddEvent(List<PodTemplate> slaves, String type, String uid, String apiObjName, String namespace) {
+      PodTemplateUtils.propogateProxyConfigToReservedPodTemplates();
       LOGGER.info("Adding PodTemplate(s) for ");
       List<PodTemplate> finalSlaveList = new ArrayList<PodTemplate>();
         for (PodTemplate podTemplate : slaves) {
@@ -116,6 +119,7 @@ public abstract class BaseWatcher {
     }
 
     protected void processSlavesForModifyEvent(List<PodTemplate> slaves, String type, String uid, String apiObjName, String namespace) {
+        PodTemplateUtils.propogateProxyConfigToReservedPodTemplates();
         LOGGER.info("Modifying PodTemplates");
         boolean alreadyTracked = PodTemplateUtils.trackedPodTemplates.containsKey(uid);
         boolean hasSlaves = slaves.size() > 0; // Configmap has podTemplates
@@ -157,7 +161,7 @@ public abstract class BaseWatcher {
         }
     }
 
-  protected void processSlavesForDeleteEvent(List<PodTemplate> slaves, String type, String uid, String apiObjName, String namespace) {
+    protected void processSlavesForDeleteEvent(List<PodTemplate> slaves, String type, String uid, String apiObjName, String namespace) {
         if (PodTemplateUtils.trackedPodTemplates.containsKey(uid)) {
             PodTemplateUtils.purgeTemplates(this, type, uid, apiObjName, namespace);
         }
