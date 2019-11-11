@@ -21,6 +21,8 @@ import hudson.plugins.git.SubmoduleConfig;
 import hudson.plugins.git.UserRemoteConfig;
 import hudson.plugins.git.extensions.GitSCMExtension;
 import hudson.scm.SCM;
+import io.fabric8.kubernetes.api.model.LocalObjectReference;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigSpec;
 import io.fabric8.openshift.api.model.BuildSource;
@@ -63,6 +65,11 @@ public class BuildConfigToJobMapper {
 		BuildSource source = null;
 		String jenkinsfile = null;
 		String jenkinsfilePath = null;
+    ObjectMeta buildConfigMetadata = bc.getMetadata();
+    if (buildConfigMetadata != null){
+      String buildConfigName = buildConfigMetadata.getName();
+      LOGGER.info("Mapping BuildConfig " + buildConfigName + " to FlowDefinition");
+    }
 		if (spec != null) {
 			source = spec.getSource();
 			BuildStrategy strategy = spec.getStrategy();
@@ -83,19 +90,8 @@ public class BuildConfigToJobMapper {
 				if (!isEmpty(source.getContextDir())) {
 					jenkinsfilePath = new File(source.getContextDir(), jenkinsfilePath).getPath();
 				}
-				GitBuildSource gitSource = source.getGit();
-				String branchRef = gitSource.getRef();
-				List<BranchSpec> branchSpecs = Collections.emptyList();
-				if (isNotBlank(branchRef)) {
-					branchSpecs = Collections.singletonList(new BranchSpec(branchRef));
-				}
-				String credentialsId = updateSourceCredentials(bc);
-				// if credentialsID is null, go with an SCM where anonymous has to be sufficient
-				GitSCM scm = new GitSCM(
-						Collections.singletonList(new UserRemoteConfig(gitSource.getUri(), null, null, credentialsId)),
-						branchSpecs, false, Collections.<SubmoduleConfig>emptyList(), null, null,
-						Collections.<GitSCMExtension>emptyList());
-				return new CpsScmFlowDefinition(scm, jenkinsfilePath);
+				GitSCM gitSCM = getGitSCM(bc);
+				return new CpsScmFlowDefinition(gitSCM, jenkinsfilePath);
 			} else {
 				LOGGER.warning("BuildConfig does not contain source repository information - "
 						+ "cannot map BuildConfig to Jenkins job");
@@ -106,98 +102,151 @@ public class BuildConfigToJobMapper {
 		}
 	}
 
+	private static GitSCM getGitSCM(BuildConfig bc){
+	  if (bc != null){
+	    BuildSource source = bc.getSpec().getSource();
+	    if (source != null){
+        GitBuildSource gitSource = source.getGit();
+        String branchRef = gitSource.getRef();
+        String gitUrl = gitSource.getUri();
+        List<BranchSpec> branchSpecs = Collections.emptyList();
+        String credentialsId = null;
+        LocalObjectReference sourceSecret = source.getSourceSecret();
+        if (sourceSecret != null){
+          try{
+            credentialsId = updateSourceCredentials(bc);
+          } catch (Exception e){
+            LOGGER.warning("Encountered "+e+" during updateSourceCredentials()");
+          }
+        }
+        if (isNotBlank(branchRef)) {
+          branchSpecs = Collections.singletonList(new BranchSpec(branchRef));
+        }
+        UserRemoteConfig userRemoteConfig = new UserRemoteConfig(gitUrl, null, branchRef, credentialsId);
+        // if credentialsID is null, go with an SCM where anonymous has to be sufficient
+        List userRemoteList = Collections.singletonList(userRemoteConfig);
+        List SubmoduleList = Collections.<GitSCMExtension>emptyList();
+        List GitSCMExtensionList = Collections.<GitSCMExtension>emptyList();
+        GitSCM gitSCM = new GitSCM(userRemoteList, branchSpecs, false, SubmoduleList, null, null, GitSCMExtensionList);
+
+        return gitSCM;
+      }
+    }
+    return null;
+  }
+
 	/**
 	 * Updates the {@link BuildConfig} if the Jenkins {@link WorkflowJob} changes
-	 *
+   *
 	 * @param job
 	 *            the job thats been updated via Jenkins
 	 * @param buildConfig
 	 *            the OpenShift BuildConfig to update
 	 * @return true if the BuildConfig was changed
+   * This will be decided if the Definition in the Job is of type CpsFlowDefinition or CpsScmFlowDefinition
+   *
 	 */
 	public static boolean updateBuildConfigFromJob(WorkflowJob job, BuildConfig buildConfig) {
-		NamespaceName namespaceName = NamespaceName.create(buildConfig);
-		JenkinsPipelineBuildStrategy jenkinsPipelineStrategy = null;
-		BuildConfigSpec spec = buildConfig.getSpec();
-		if (spec != null) {
-			BuildStrategy strategy = spec.getStrategy();
-			if (strategy != null) {
-				jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
-			}
-		}
+    NamespaceName namespaceName = NamespaceName.create(buildConfig);
+    JenkinsPipelineBuildStrategy jenkinsPipelineStrategy = null;
+    BuildConfigSpec spec = buildConfig.getSpec();
+    if (spec != null) {
+      BuildStrategy strategy = spec.getStrategy();
+      if (strategy != null) {
+        jenkinsPipelineStrategy = strategy.getJenkinsPipelineStrategy();
+      }
+    }
 
-		if (jenkinsPipelineStrategy == null) {
-			LOGGER.warning("No jenkinsPipelineStrategy available in the BuildConfig " + namespaceName);
-			return false;
-		}
+    if (jenkinsPipelineStrategy == null) {
+      LOGGER.warning("No jenkinsPipelineStrategy available in the BuildConfig " + namespaceName);
+      return false;
+    }
 
-		FlowDefinition definition = job.getDefinition();
-		if (definition instanceof CpsScmFlowDefinition) {
-			CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
-			String scriptPath = cpsScmFlowDefinition.getScriptPath();
-			if (scriptPath != null && scriptPath.trim().length() > 0) {
-				boolean rc = false;
-				BuildSource source = getOrCreateBuildSource(spec);
-				String bcContextDir = source.getContextDir();
-				if (StringUtils.isNotBlank(bcContextDir) && scriptPath.startsWith(bcContextDir)) {
-					scriptPath = scriptPath.replaceFirst("^" + bcContextDir + "/?", "");
-				}
+    LOGGER.info("Updating BuildConfig From Job " + namespaceName);
 
-				if (!scriptPath.equals(jenkinsPipelineStrategy.getJenkinsfilePath())) {
-					LOGGER.log(Level.FINE,
-							"updating bc " + namespaceName + " jenkinsfile path to " + scriptPath + " from ");
-					rc = true;
-					jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
-				}
+    FlowDefinition definition = job.getDefinition();
+    String jenkinsfilePath = jenkinsPipelineStrategy.getJenkinsfilePath();
+    if (definition instanceof CpsScmFlowDefinition) {
+      BuildSource source = getOrCreateBuildSource(spec);
+      CpsScmFlowDefinition cpsScmFlowDefinition = (CpsScmFlowDefinition) definition;
+      String scriptPath = cpsScmFlowDefinition.getScriptPath();
+      SCM scm = cpsScmFlowDefinition.getScm();
+      if (scm instanceof GitSCM){
+        GitSCM gitSCM = (GitSCM) scm;
+        List<UserRemoteConfig> userRemoteConfigs = gitSCM.getUserRemoteConfigs();
+        LocalObjectReference sourceSecret = source.getSourceSecret();
+        if  (sourceSecret != null){
+          String sourceSecretName = sourceSecret.getName();
+          UserRemoteConfig sourceSecretUserRemoteConfig = new UserRemoteConfig(null, null,null, sourceSecretName);
+          if (!userRemoteConfigs.contains(sourceSecretUserRemoteConfig)){
+            LOGGER.info("Adding Build SourceSecret " + sourceSecretName + " as UserRemoteConfig");
+            userRemoteConfigs.add(sourceSecretUserRemoteConfig);
+          }
+        }
+      }
+      if (scriptPath != null && scriptPath.trim().length() > 0) {
+        boolean rc = false;
+        String bcContextDir = source.getContextDir();
+        if (StringUtils.isNotBlank(bcContextDir) && scriptPath.startsWith(bcContextDir)) {
+          scriptPath = scriptPath.replaceFirst("^" + bcContextDir + "/?", "");
+        }
 
-				SCM scm = cpsScmFlowDefinition.getScm();
-				if (scm instanceof GitSCM) {
-					populateFromGitSCM(buildConfig, source, (GitSCM) scm, null);
-					LOGGER.log(Level.FINE, "updating bc " + namespaceName);
-					rc = true;
-				}
-				return rc;
-			}
-			return false;
-		}
+        if (!scriptPath.equals(jenkinsfilePath)) {
+          LOGGER.log(Level.FINE,
+            "updating bc " + namespaceName + " jenkinsfile path to " + scriptPath + " from ");
+          rc = true;
+          jenkinsPipelineStrategy.setJenkinsfilePath(scriptPath);
+        }
 
-		if (definition instanceof CpsFlowDefinition) {
-			CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
-			String jenkinsfile = cpsFlowDefinition.getScript();
-			if (jenkinsfile != null && jenkinsfile.trim().length() > 0
-					&& !jenkinsfile.equals(jenkinsPipelineStrategy.getJenkinsfile())) {
-				LOGGER.log(Level.FINE, "updating bc " + namespaceName + " jenkinsfile to " + jenkinsfile
-						+ " where old jenkinsfile was " + jenkinsPipelineStrategy.getJenkinsfile());
-				jenkinsPipelineStrategy.setJenkinsfile(jenkinsfile);
-				return true;
-			}
+        scm = cpsScmFlowDefinition.getScm();
+        if (scm instanceof GitSCM) {
+          populateFromGitSCM(buildConfig, source, (GitSCM) scm, null);
+          LOGGER.log(Level.FINE, "updating bc " + namespaceName);
+          rc = true;
+        }
+        return rc;
+      }
+      return false;
+    }
 
-			return false;
-		}
+    if (definition instanceof CpsFlowDefinition) {
+      CpsFlowDefinition cpsFlowDefinition = (CpsFlowDefinition) definition;
+      String jenkinsFileFromDefinition = cpsFlowDefinition.getScript();
+      String jenkinsFileFromStrategy = jenkinsPipelineStrategy.getJenkinsfile();
+      if (jenkinsFileFromDefinition != null && jenkinsFileFromDefinition.trim().length() > 0
+        && !jenkinsFileFromDefinition.equals(jenkinsFileFromStrategy)) {
+        LOGGER.log(Level.FINE, "updating bc " + namespaceName + " jenkinsfile to " + jenkinsFileFromDefinition
+          + " where old jenkinsfile was " + jenkinsFileFromStrategy);
+        jenkinsPipelineStrategy.setJenkinsfile(jenkinsFileFromDefinition);
+        return true;
+      }
 
-		// support multi-branch or github organization jobs
-		BranchJobProperty property = job.getProperty(BranchJobProperty.class);
-		if (property != null) {
-			Branch branch = property.getBranch();
-			if (branch != null) {
-				String ref = branch.getName();
-				SCM scm = branch.getScm();
-				BuildSource source = getOrCreateBuildSource(spec);
-				if (scm instanceof GitSCM) {
-					if (populateFromGitSCM(buildConfig, source, (GitSCM) scm, ref)) {
-						if (StringUtils.isEmpty(jenkinsPipelineStrategy.getJenkinsfilePath())) {
-							jenkinsPipelineStrategy.setJenkinsfilePath("Jenkinsfile");
-						}
-						return true;
-					}
-				}
-			}
-		}
+      return false;
+    }
 
-		LOGGER.warning("Cannot update BuildConfig " + namespaceName + " as the definition is of class "
-				+ (definition == null ? "null" : definition.getClass().getName()));
-		return false;
-	}
+    // support multi-branch or github organization jobs
+    BranchJobProperty property = job.getProperty(BranchJobProperty.class);
+    if (property != null) {
+      Branch branch = property.getBranch();
+      if (branch != null) {
+        String ref = branch.getName();
+        SCM scm = branch.getScm();
+        BuildSource source = getOrCreateBuildSource(spec);
+        if (scm instanceof GitSCM) {
+          if (populateFromGitSCM(buildConfig, source, (GitSCM) scm, ref)) {
+            if (StringUtils.isEmpty(jenkinsfilePath)) {
+              jenkinsPipelineStrategy.setJenkinsfilePath("Jenkinsfile");
+            }
+            return true;
+          }
+        }
+      }
+    }
+
+    LOGGER.warning("Cannot update BuildConfig " + namespaceName + " as the definition is of class "
+      + (definition == null ? "null" : definition.getClass().getName()));
+    return false;
+  }
 
 	private static boolean populateFromGitSCM(BuildConfig buildConfig, BuildSource source, GitSCM gitSCM, String ref) {
 		source.setType("Git");

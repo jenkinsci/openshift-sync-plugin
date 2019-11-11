@@ -17,9 +17,12 @@ import com.openshift.jenkins.plugins.OpenShiftTokenCredentials;
 import hudson.model.Fingerprint;
 import hudson.remoting.Base64;
 import hudson.security.ACL;
+import io.fabric8.kubernetes.api.model.LocalObjectReference;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.openshift.api.model.BuildConfig;
+import io.fabric8.openshift.api.model.BuildConfigSpec;
+import io.fabric8.openshift.api.model.BuildSource;
 import jenkins.model.Jenkins;
 import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
@@ -51,37 +54,60 @@ public class CredentialsUtils {
 
 
   public static Secret getSourceCredentials(BuildConfig buildConfig) {
-        if (buildConfig.getSpec() != null && buildConfig.getSpec().getSource() != null
-                && buildConfig.getSpec().getSource().getSourceSecret() != null
-                && !buildConfig.getSpec().getSource().getSourceSecret().getName().isEmpty()) {
-            Secret sourceSecret = getAuthenticatedOpenShiftClient().secrets()
-                    .inNamespace(buildConfig.getMetadata().getNamespace())
-                    .withName(buildConfig.getSpec().getSource().getSourceSecret().getName()).get();
-            return sourceSecret;
+    BuildConfigSpec spec = buildConfig.getSpec();
+    if (spec != null) {
+      BuildSource source = spec.getSource();
+      if (source != null) {
+        LocalObjectReference sourceSecret = source.getSourceSecret();
+        if (sourceSecret != null) {
+          String sourceSecretName = sourceSecret.getName();
+          if (sourceSecretName != null && !sourceSecretName.isEmpty()) {
+            ObjectMeta buildConfigMetadata = buildConfig.getMetadata();
+            String namespace = buildConfigMetadata.getNamespace();
+            String buildConfigName = buildConfigMetadata.getName();
+            logger.info("Retrieving SourceSecret for BuildConfig " + buildConfigName + " in Namespace " + namespace);
+            Secret secret = getAuthenticatedOpenShiftClient().secrets().inNamespace(namespace).withName(sourceSecretName).get();
+            if (secret == null) {
+              logger.warning("Secret Name provided in BuildConfig " + buildConfigName + " as " + sourceSecretName + " does not exist. " +
+                "Please review the BuildConfig and make the necessary changes.");
+            } else{
+              return secret;
+            }
+          }
         }
+      }
+    }
         return null;
     }
 
     public static String updateSourceCredentials(BuildConfig buildConfig) throws IOException {
-        Secret sourceSecret = getSourceCredentials(buildConfig);
-        String credID = null;
-        if (sourceSecret != null) {
-            credID = upsertCredential(sourceSecret, sourceSecret.getMetadata().getNamespace(),
-                    sourceSecret.getMetadata().getName());
-            if (credID != null)
-                BuildConfigSecretToCredentialsMap.linkBCSecretToCredential(NamespaceName.create(buildConfig).toString(),
-                        credID);
-
-        } else {
-            // call delete and remove any credential that fits the
-            // project/bcname pattern
-            credID = BuildConfigSecretToCredentialsMap
-                    .unlinkBCSecretToCrendential(NamespaceName.create(buildConfig).toString());
-            if (credID != null)
-                deleteCredential(credID, NamespaceName.create(buildConfig),
-                        buildConfig.getMetadata().getResourceVersion());
-        }
-        return credID;
+          String credId = null;
+          Secret sourceSecret = getSourceCredentials(buildConfig);
+          if (sourceSecret != null) {
+            ObjectMeta sourceSecretMetadata = sourceSecret.getMetadata();
+            if (sourceSecretMetadata != null){
+              String namespace = sourceSecretMetadata.getNamespace();
+              String secretName = sourceSecretMetadata.getName();
+              ObjectMeta buildConfigMetadata = buildConfig.getMetadata();
+              String buildConfigName = buildConfigMetadata.getName();
+              credId = upsertCredential(sourceSecret, namespace, secretName);
+              if (credId != null) {
+                logger.info("Linking BuildConfig sourceSecret "+secretName+" to Jenkins Credential "+credId);
+                BuildConfigSecretToCredentialsMap.linkBCSecretToCredential(NamespaceName.create(buildConfig).toString(), credId);
+                return credId;
+              }else {
+                // call delete and remove any credential that fits the
+                // project/bcname pattern
+                logger.info("Unlinking BuildConfig sourceSecret matching BuildConfig "+buildConfigName);
+                credId = BuildConfigSecretToCredentialsMap.unlinkBCSecretToCrendential(NamespaceName.create(buildConfig).toString());
+                if (credId != null){
+                  logger.info("Deleting sourceSecret "+secretName+" in namespace "+namespace);
+                  deleteCredential(credId, NamespaceName.create(buildConfig), buildConfigMetadata.getResourceVersion());
+                }
+              }
+            }
+          }
+        return credId;
     }
 
     public static void deleteSourceCredentials(BuildConfig buildConfig) throws IOException {
@@ -185,6 +211,9 @@ public class CredentialsUtils {
               s.save();
             } finally {
               SecurityContextHolder.setContext(previousContext);
+            }
+            if (id != null && !id.isEmpty()){
+              return id;
             }
           }
         }
