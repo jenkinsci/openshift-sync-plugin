@@ -71,8 +71,7 @@ public class PodTemplateUtils {
     podTemplate.setCommand("");
     podTemplate.setArgs("${computer.jnlpmac} ${computer.name}");
     podTemplate.setRemoteFs("/tmp");
-    // podTemplate = setProxyConfigToPodTemplate(podTemplate);
-    setProxyEnvVar(podTemplate);
+    podTemplate = setProxyEnvVar(podTemplate);
     String podName = System.getenv().get("HOSTNAME");
     if (podName != null) {
       Pod pod = getAuthenticatedOpenShiftClient().pods().withName(podName).get();
@@ -80,7 +79,6 @@ public class PodTemplateUtils {
         podTemplate.setServiceAccount(pod.getSpec().getServiceAccountName());
       }
     }
-
     return podTemplate;
   }
 
@@ -172,22 +170,30 @@ public class PodTemplateUtils {
   }
 
   protected static PodTemplate setProxyEnvVar(PodTemplate podTemplate) {
-    LOGGER.info("Adding Proxy EnvVar for Template "+podTemplate.getName());
-    List<TemplateEnvVar> envVars = new ArrayList<TemplateEnvVar>();
+    String podTemplateName = podTemplate.getName();
+    LOGGER.info("Adding Proxy EnvVar for Template " + podTemplateName);
+    List<TemplateEnvVar> envVars = podTemplate.getEnvVars();
+    List<TemplateEnvVar> ptEnvVars = new ArrayList<TemplateEnvVar>();
+
     String httpProxy = System.getenv(HTTP_PROXY_ENV_VAR_NAME);
     String httpsProxy = System.getenv(HTTPS_PROXY_ENV_VAR_NAME);
     String noProxy = System.getenv(NO_PROXY_ENV_VAR_NAME);
 
-    if (HTTP_PROXY_ENV_VAR_NAME != null && !HTTP_PROXY_ENV_VAR_NAME.isEmpty()) {
-      envVars.add(new KeyValueEnvVar(HTTP_PROXY_ENV_VAR_NAME, httpProxy));
+    if (httpProxy != null && !httpProxy.isEmpty()) {
+      ptEnvVars.add(new KeyValueEnvVar(HTTP_PROXY_ENV_VAR_NAME, httpProxy));
+      LOGGER.info("Added EnvVar with key " + HTTP_PROXY_ENV_VAR_NAME + " for PodTemplate " + podTemplateName);
     }
-    if (HTTPS_PROXY_ENV_VAR_NAME != null && !HTTPS_PROXY_ENV_VAR_NAME.isEmpty()) {
-      envVars.add(new KeyValueEnvVar(HTTPS_PROXY_ENV_VAR_NAME, httpsProxy));
+    if (httpsProxy != null && !httpsProxy.isEmpty()) {
+      ptEnvVars.add(new KeyValueEnvVar(HTTPS_PROXY_ENV_VAR_NAME, httpsProxy));
+      LOGGER.info("Added EnvVar with key " + HTTPS_PROXY_ENV_VAR_NAME + " for PodTemplate " + podTemplateName);
     }
-    if (NO_PROXY_ENV_VAR_NAME != null && !NO_PROXY_ENV_VAR_NAME.isEmpty()) {
-      envVars.add(new KeyValueEnvVar(NO_PROXY_ENV_VAR_NAME, noProxy));
+    if (noProxy != null && !noProxy.isEmpty()) {
+      ptEnvVars.add(new KeyValueEnvVar(NO_PROXY_ENV_VAR_NAME, noProxy));
+      LOGGER.info("Added EnvVar with key " + NO_PROXY_ENV_VAR_NAME + " for PodTemplate " + podTemplateName);
     }
-    podTemplate.setEnvVars(envVars);
+    ptEnvVars.addAll(envVars);
+    podTemplate.setEnvVars(ptEnvVars);
+    podTemplate.save();
     return podTemplate;
   }
 
