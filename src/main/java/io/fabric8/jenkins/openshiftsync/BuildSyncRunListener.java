@@ -100,6 +100,9 @@ public class BuildSyncRunListener extends RunListener<Run> {
     private static final String KUBERNETES_NAMESPACE = "KUBERNETES_NAMESPACE";
     private static final Logger logger = LoggerFactory.getLogger(BuildSyncRunListener.class.getName());
 
+    /** 422 Unprocessable Entity (WebDAV - RFC 2518) */
+    private static final int HTTP_UNPROCESSABLE_ENTITY = 422;
+
     private long pollPeriodMs = 1000 * 5; // 5 seconds
     private long delayPollPeriodMs = 1000; // 1 seconds
     private static final long maxDelay = 30000;
@@ -238,7 +241,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
         try {
             return upsertBuild(run, wfRunExt, blueRun);
         } catch (KubernetesClientException e) {
-            if (e.getCode() == 422) { // 422 Unprocessable Entity (WebDAV - RFC 2518)
+            if (e.getCode() == HTTP_UNPROCESSABLE_ENTITY) {
                 runsToPoll.remove(run);
                 logger.warn(String.format("Cannot update status: %s with status %s", e.getMessage(), e.getStatus().toString()));
                 return false;
