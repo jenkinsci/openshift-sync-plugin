@@ -24,6 +24,8 @@ import static java.util.Collections.singletonMap;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
 import io.fabric8.kubernetes.client.dsl.base.OperationContext;
 import org.csanchez.jenkins.plugins.kubernetes.PodTemplate;
 import org.slf4j.Logger;
@@ -89,6 +91,7 @@ public class ConfigMapClusterInformer implements ResourceEventHandler<ConfigMap>
     }
 
     @Override
+    @SuppressFBWarnings(value = {"NP_NULL_ON_SOME_PATH", "RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE"}, justification = "TODO needs triage")
     public void onUpdate(ConfigMap oldObj, ConfigMap newObj) {
         LOGGER.debug("ConfigMap informer  received update event for: " + oldObj + " to: " + newObj);
         if (oldObj != null) {

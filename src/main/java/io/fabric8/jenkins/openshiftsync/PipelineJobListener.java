@@ -15,8 +15,6 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
 import com.google.common.base.Objects;
 
 import hudson.Extension;
@@ -63,7 +61,6 @@ public class PipelineJobListener extends ItemListener {
     }
 
     @DataBoundConstructor
-    @SuppressFBWarnings("EI_EXPOSE_REP2")
     public PipelineJobListener(String server, String[] namespaces, String jobNamePattern) {
         this.server = server;
         this.namespace = namespaces[0];

@@ -351,7 +351,7 @@ public class CredentialsUtils {
             return null;
         }
         return newSecretTextCredential(generatedCredentialsName,
-                new String(Base64.getEncoder().encode(text.getBytes())));
+                Base64.getEncoder().encodeToString(text.getBytes(UTF_8)));
     }
 
     private static Credentials secretToCredentials(Secret secret) {
@@ -442,7 +442,7 @@ public class CredentialsUtils {
             logInvalidSecretData(secretName, certificateData, "certificate");
             return null;
         }
-        String certificatePassword = passwordData != null ? new String(DECODER.decode(passwordData)) : null;
+        String certificatePassword = passwordData != null ? new String(DECODER.decode(passwordData), UTF_8) : null;
         return new CertificateCredentialsImpl(GLOBAL, secretName, secretName, certificatePassword,
                 new CertificateCredentialsImpl.UploadedKeyStoreSource(SecretBytes.fromString(certificateData)));
     }

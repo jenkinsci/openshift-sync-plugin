@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -46,8 +47,8 @@ public class PodTemplateUtils {
     static final String SLAVE_LABEL = "slave-label";
     private static final String SPECIAL_IST_PREFIX = "imagestreamtag:";
     private static final int SPECIAL_IST_PREFIX_IDX = SPECIAL_IST_PREFIX.length();
-    protected final static ConcurrentHashMap<String, List<PodTemplate>> trackedPodTemplates = new ConcurrentHashMap<String, List<PodTemplate>>();
-    protected static ConcurrentHashMap<String, String> podTemplateToApiType = new ConcurrentHashMap<String, String>();
+    protected static final ConcurrentMap<String, List<PodTemplate>> trackedPodTemplates = new ConcurrentHashMap<String, List<PodTemplate>>();
+    protected static final ConcurrentMap<String, String> podTemplateToApiType = new ConcurrentHashMap<String, String>();
 
     protected static boolean hasOneAndOnlyOneWithSomethingAfter(String str, String substr) {
         return str.contains(substr) && str.indexOf(substr) == str.lastIndexOf(substr)

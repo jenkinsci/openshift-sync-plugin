@@ -60,7 +60,6 @@ import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 
 import com.cloudbees.plugins.credentials.CredentialsParameterDefinition;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.model.Action;
 import hudson.model.BooleanParameterDefinition;
@@ -617,7 +616,6 @@ public class JenkinsUtils {
 		});
 	}
 
-	@SuppressFBWarnings("SE_BAD_FIELD")
 	public static boolean cancelQueuedBuild(WorkflowJob job, Build build) {
 		String buildUid = build.getMetadata().getUid();
 		final Queue buildQueue = Jenkins.getActiveInstance().getQueue();

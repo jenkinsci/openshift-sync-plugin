@@ -99,7 +99,7 @@ public class OpenShiftUtils {
                 FileReader fr = null;
                 BufferedReader br = null;
                 try {
-                    fr = new FileReader(Constants.OPENSHIFT_PROJECT_FILE);
+                    fr = new FileReader(Constants.OPENSHIFT_PROJECT_FILE, StandardCharsets.UTF_8);
                     br = new BufferedReader(fr);
                     // should just be one line
                     jenkinsPodNamespace = br.readLine();
