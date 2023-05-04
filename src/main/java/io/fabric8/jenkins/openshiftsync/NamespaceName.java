@@ -77,7 +77,7 @@ public class NamespaceName {
     }
 
     /**
-     * Asserts whether the value is <b>not</b> <tt>null</tt>
+     * Asserts whether the value is not null
      *
      * @param value
      *            the value to test

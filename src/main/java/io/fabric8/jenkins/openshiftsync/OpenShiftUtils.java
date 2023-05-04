@@ -130,7 +130,7 @@ public class OpenShiftUtils {
      *
      * @param serverUrl the optional URL of where the OpenShift cluster API server
      *                  is running
-     * @param maxConnections
+     * @param maxConnections the maximum number of connections
      */
     public synchronized static void initializeOpenShiftClient(String serverUrl, int maxConnections) {
         if (openShiftClient != null) {
