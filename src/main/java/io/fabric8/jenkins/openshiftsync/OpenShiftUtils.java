@@ -130,7 +130,7 @@ public class OpenShiftUtils {
      *
      * @param serverUrl the optional URL of where the OpenShift cluster API server
      *                  is running
-     * @param maxConnections2 
+     * @param maxConnections
      */
     public synchronized static void initializeOpenShiftClient(String serverUrl, int maxConnections) {
         if (openShiftClient != null) {
@@ -143,7 +143,7 @@ public class OpenShiftUtils {
         }
         Config config = configBuilder.build();
         logger.log(INFO, "Current OpenShift Client Configuration: " + ReflectionToStringBuilder.toString(config));
-        
+
         String version = JENKINS_INSTANCE.getPluginManager().getPlugin("openshift-sync").getVersion();
         config.setUserAgent("openshift-sync-plugin-" + version + "/fabric8-" + Version.clientVersion());
         openShiftClient = new DefaultOpenShiftClient(config);
@@ -184,9 +184,9 @@ public class OpenShiftUtils {
     public synchronized static void shutdownOpenShiftClient() {
         logger.info("Stopping openshift client: " + openShiftClient);
         if (openShiftClient != null) {
-            
+
             // All this stuff is done by  openShiftClient.close();
-            
+
 //            DefaultOpenShiftClient client = (DefaultOpenShiftClient) openShiftClient;
 //            Dispatcher dispatcher = client.getHttpClient().dispatcher();
 //            ExecutorService executorService = dispatcher.executorService();
@@ -296,7 +296,7 @@ public class OpenShiftUtils {
     /**
      * Returns the parent for the given item full name or default to the active
      * jenkins if it does not exist
-     * 
+     *
      * @param activeJenkins the active Jenkins instance
      * @param fullName      the full name of the instance
      * @param namespace     the namespace where the instance runs
@@ -477,7 +477,7 @@ public class OpenShiftUtils {
 
     /**
      * Lazily creates the GitSource if need be then updates the git URL
-     * 
+     *
      * @param buildConfig the BuildConfig to update
      * @param gitUrl      the URL to the git repo
      * @param ref         the git ref (commit/branch/etc) for the build
