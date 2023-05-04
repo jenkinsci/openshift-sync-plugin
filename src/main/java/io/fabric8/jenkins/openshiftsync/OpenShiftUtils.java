@@ -128,9 +128,10 @@ public class OpenShiftUtils {
     /**
      * Initializes an {@link OpenShiftClient}
      *
-     * @param serverUrl the optional URL of where the OpenShift cluster API server
-     *                  is running
-     * @param maxConnections2 
+     * @param serverUrl      the optional URL of where the OpenShift cluster API
+     *                       server
+     *                       is running
+     * @param maxConnections the maximum number of connections
      */
     public synchronized static void initializeOpenShiftClient(String serverUrl, int maxConnections) {
         if (openShiftClient != null) {
@@ -143,7 +144,7 @@ public class OpenShiftUtils {
         }
         Config config = configBuilder.build();
         logger.log(INFO, "Current OpenShift Client Configuration: " + ReflectionToStringBuilder.toString(config));
-        
+
         String version = JENKINS_INSTANCE.getPluginManager().getPlugin("openshift-sync").getVersion();
         config.setUserAgent("openshift-sync-plugin-" + version + "/fabric8-" + Version.clientVersion());
         openShiftClient = new DefaultOpenShiftClient(config);
@@ -173,36 +174,39 @@ public class OpenShiftUtils {
 
     public static SharedInformerFactory getInformerFactory() {
         return getAuthenticatedOpenShiftClient().informers();
-/*        if (factory == null) {
-            synchronized (lock) {
-                factory = getAuthenticatedOpenShiftClient().informers();
-            }
-        }
-        return factory;*/
+        /*
+         * if (factory == null) {
+         * synchronized (lock) {
+         * factory = getAuthenticatedOpenShiftClient().informers();
+         * }
+         * }
+         * return factory;
+         */
     }
 
     public synchronized static void shutdownOpenShiftClient() {
         logger.info("Stopping openshift client: " + openShiftClient);
         if (openShiftClient != null) {
-            
-            // All this stuff is done by  openShiftClient.close();
-            
-//            DefaultOpenShiftClient client = (DefaultOpenShiftClient) openShiftClient;
-//            Dispatcher dispatcher = client.getHttpClient().dispatcher();
-//            ExecutorService executorService = dispatcher.executorService();
-//            try {
-//                dispatcher.cancelAll();
-//                client.getHttpClient().connectionPool().evictAll();
-//                //TODO Akram: shutting donw the executorService prevents other informers to re-attach to it.
-//                executorService.shutdown();
-//                TimeUnit.SECONDS.sleep(1);
-//            } catch (Exception e) {
-//                logger.warning("Error while stopping executor thread");
-//                executorService.shutdownNow();
-//            }
+
+            // All this stuff is done by openShiftClient.close();
+
+            // DefaultOpenShiftClient client = (DefaultOpenShiftClient) openShiftClient;
+            // Dispatcher dispatcher = client.getHttpClient().dispatcher();
+            // ExecutorService executorService = dispatcher.executorService();
+            // try {
+            // dispatcher.cancelAll();
+            // client.getHttpClient().connectionPool().evictAll();
+            // //TODO Akram: shutting donw the executorService prevents other informers to
+            // re-attach to it.
+            // executorService.shutdown();
+            // TimeUnit.SECONDS.sleep(1);
+            // } catch (Exception e) {
+            // logger.warning("Error while stopping executor thread");
+            // executorService.shutdownNow();
+            // }
             openShiftClient.close();
             openShiftClient = null;
-//            factory = null;
+            // factory = null;
         }
     }
 
@@ -296,7 +300,7 @@ public class OpenShiftUtils {
     /**
      * Returns the parent for the given item full name or default to the active
      * jenkins if it does not exist
-     * 
+     *
      * @param activeJenkins the active Jenkins instance
      * @param fullName      the full name of the instance
      * @param namespace     the namespace where the instance runs
@@ -477,7 +481,7 @@ public class OpenShiftUtils {
 
     /**
      * Lazily creates the GitSource if need be then updates the git URL
-     * 
+     *
      * @param buildConfig the BuildConfig to update
      * @param gitUrl      the URL to the git repo
      * @param ref         the git ref (commit/branch/etc) for the build
@@ -606,14 +610,14 @@ public class OpenShiftUtils {
     }
 
     public static String getLabel(HasMetadata resource, String name) {
-      ObjectMeta metadata = resource.getMetadata();
-      if (metadata != null) {
-          Map<String, String> labels = metadata.getLabels();
-          if (labels != null) {
-              return labels.get(name);
-          }
-      }
-      return null;
+        ObjectMeta metadata = resource.getMetadata();
+        if (metadata != null) {
+            Map<String, String> labels = metadata.getLabels();
+            if (labels != null) {
+                return labels.get(name);
+            }
+        }
+        return null;
     }
 
     public static String getAnnotation(HasMetadata resource, String name) {
