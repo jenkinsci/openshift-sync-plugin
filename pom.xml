@@ -139,7 +139,7 @@
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-job</artifactId>
-                <version>1289.vd1c337fd5354</version>
+                <version>1324.va_6f289e26a_b_8</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
