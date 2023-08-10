@@ -1,13 +1,13 @@
 module github.com/openshift/jenkins-sync-plugin
 
-go 1.19
+go 1.20
 
 require (
-	github.com/openshift/api v0.0.0-20230705144233-e28cd4dd28a8
-	github.com/openshift/client-go v0.0.0-20230705133330-7f808ad59404
-	k8s.io/api v0.27.3
-	k8s.io/apimachinery v0.27.3
-	k8s.io/client-go v1.5.2
+	github.com/openshift/api v0.0.0-20230810152202-3e3f07aadec4
+	github.com/openshift/client-go v0.0.0-20230807132528-be5346fb33cb
+	k8s.io/api v0.27.4
+	k8s.io/apimachinery v0.27.4
+	k8s.io/client-go v0.27.4
 )
 
 require (
@@ -51,8 +51,8 @@ require (
 )
 
 replace (
-	k8s.io/api => k8s.io/api v0.27.3
-	k8s.io/apimachinery => k8s.io/apimachinery v0.27.3
-	k8s.io/client-go => k8s.io/client-go v0.27.3
+	k8s.io/api => k8s.io/api v0.27.4
+	k8s.io/apimachinery => k8s.io/apimachinery v0.27.4
+	k8s.io/client-go => k8s.io/client-go v0.27.4
 
 )
