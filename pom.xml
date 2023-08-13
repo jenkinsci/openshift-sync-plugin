@@ -115,7 +115,7 @@
         <dependency>
             <groupId>org.csanchez.jenkins.plugins</groupId>
             <artifactId>kubernetes</artifactId>
-            <version>3937.vd7b_82db_e347b_</version>
+            <version>3923.v294a_d4250b_91</version>
         </dependency>
     </dependencies>
 
@@ -125,7 +125,7 @@
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
                 <artifactId>bom-2.401.x</artifactId>
-                <version>2220.vea_cea_f1a_35e4</version>
+                <version>2244.vd60654536b_96</version>
                 <type>pom</type>
             </dependency>
             <!-- https://mvnrepository.com/artifact/io.jenkins.plugins/snakeyaml-api -->
@@ -144,7 +144,13 @@
             <dependency>
                 <groupId>io.jenkins.plugins</groupId>
                 <artifactId>ionicons-api</artifactId>
-                <version>56.v1b_1c8c49374e</version>
+                <version>57.v70787cec562e</version>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.jenkins-ci.plugins/jackson2-api -->
+            <dependency>
+                <groupId>org.jenkins-ci.plugins</groupId>
+                <artifactId>jackson2-api</artifactId>
+                <version>2.15.2-350.v0c2f3f8fc595</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -265,6 +271,7 @@
                                 </goals>
                                 <configuration>
                                     <rules>
+                                        <banDuplicatePomDependencyVersions />
                                         <dependencyConvergence />
                                         <requireReleaseDeps>
                                             <message>No Snapshots Allowed!</message>
