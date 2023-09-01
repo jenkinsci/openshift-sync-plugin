@@ -144,7 +144,7 @@
             <dependency>
                 <groupId>io.jenkins.plugins</groupId>
                 <artifactId>ionicons-api</artifactId>
-                <version>57.v70787cec562e</version>
+                <version>61.v5c41a_b_1b_db_b_b_</version>
             </dependency>
             <!-- https://mvnrepository.com/artifact/org.jenkins-ci.plugins/jackson2-api -->
             <dependency>
