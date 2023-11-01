@@ -90,7 +90,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>script-security</artifactId>
-            <version>1251.vfe552ed55f8d</version>
+            <version>1278.veb_6ca_8961d16</version>
         </dependency>
         <dependency>
             <groupId>joda-time</groupId>
