@@ -135,7 +135,7 @@
             <dependency>
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-support</artifactId>
-                <version>865.v43e78cc44e0d</version>
+                <version>877.v6f33c1d40b_cb_</version>
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins.pipeline-stage-view</groupId>
