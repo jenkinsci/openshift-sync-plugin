@@ -155,7 +155,7 @@
             <dependency>
                 <groupId>org.csanchez.jenkins.plugins</groupId>
                 <artifactId>kubernetes</artifactId>
-                <version>4174.v4230d0ccd951</version>
+                <version>4206.v5fa_2c06747dd</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
