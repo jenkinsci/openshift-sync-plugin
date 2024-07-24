@@ -34,6 +34,7 @@ import java.util.logging.Logger;
 import org.acegisecurity.context.SecurityContext;
 import org.acegisecurity.context.SecurityContextHolder;
 import org.apache.commons.lang.StringUtils;
+import org.codehaus.groovy.tools.StringHelper;
 import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 
@@ -183,73 +184,105 @@ public class CredentialsUtils {
     }
 
     private static String insertOrUpdateCredentialsFromSecret(Secret secret) throws IOException {
-        if (secret != null) {
-            String customSecretName = getSecretCustomName(secret);
-            ObjectMeta metadata = secret.getMetadata();
-            String namespace = metadata.getNamespace();
-            String secretName = metadata.getName();
-            Credentials creds = secretToCredentials(secret);
-            if (creds != null) {
-                // checking with updated secret name if custom name is not null
-                String id = generateCredentialsName(namespace, secretName, customSecretName);
-                Credentials existingCreds = lookupCredentials(id);
-                final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
-                try {
-                    CredentialsStore creentialsStore = lookupStores(Jenkins.getActiveInstance()).iterator().next();
-                    String originalId = generateCredentialsName(namespace, secretName, null);
-                    Credentials existingOriginalCreds = lookupCredentials(originalId);
-                    NamespaceName secretNamespaceName = null;
+        if (secret == null) return null;
 
-                    String secretUid = metadata.getUid();
-                    if (!originalId.equals(id)) {
-                        boolean hasAddedCredential = creentialsStore.addCredentials(Domain.global(), creds);
-                        if (!hasAddedCredential) {
-                            logger.warning("Setting secret  failed for secret with new Id " + id + " from Secret "
-                                    + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
-                            logger.warning("Check if Id " + id + " is not already used.");
-                        } else {
-                            String oldId = UID_TO_SECRET_MAP.get(secretUid);
-                            if (oldId != null) {
-                                Credentials oldCredentials = lookupCredentials(oldId);
-                                creentialsStore.removeCredentials(Domain.global(), oldCredentials);
-                            } else if (existingOriginalCreds != null) {
-                                creentialsStore.removeCredentials(Domain.global(), existingOriginalCreds);
-                            }
-                            UID_TO_SECRET_MAP.put(secretUid, id);
-                            secretNamespaceName = NamespaceName.create(secret);
-                            logger.info("Updated credential " + oldId + " with new Id " + id + " from Secret "
-                                    + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
-                        }
-                    } else {
-                        if (existingCreds != null) {
-                            creentialsStore.updateCredentials(Domain.global(), existingCreds, creds);
-                            UID_TO_SECRET_MAP.put(secretUid, id);
-                            secretNamespaceName = NamespaceName.create(secret);
-                            logger.info("Updated credential " + id + " from Secret " + secretNamespaceName
-                                    + " with revision: " + metadata.getResourceVersion());
-                        } else {
-                            boolean hasAddedCredential = creentialsStore.addCredentials(Domain.global(), creds);
-                            if (!hasAddedCredential) {
-                                logger.warning("Update failed for secret with new Id " + id + " from Secret "
-                                        + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
-                            } else {
-                                UID_TO_SECRET_MAP.put(secretUid, id);
-                                secretNamespaceName = NamespaceName.create(secret);
-                                logger.info("Created credential " + id + " from Secret " + secretNamespaceName
-                                        + " with revision: " + metadata.getResourceVersion());
-                            }
-                        }
+        Credentials credsFromSecret = secretToCredentials(secret);
+        if (credsFromSecret == null) return null;
+
+        Credentials annotatedCredentials = null;
+        Credentials defaultCredentials = null;
+        
+        final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
+
+        ObjectMeta metadata = secret.getMetadata();
+        String namespace = metadata.getNamespace();
+        String secretName = metadata.getName();
+        
+        String annotatedSecretName = null;
+        String defaultSecretName = generateCredentialsName(namespace, secretName, null);
+        String secretUid = metadata.getUid();
+        String addOrUpdateCredentialName = null;
+        String removeCredentialName = null;
+        NamespaceName secretNamespaceName = null;
+
+        Boolean updateUidMap = false;
+
+        ConcurrentHashMap<String, Credentials> credentialMap = new ConcurrentHashMap<String, Credentials>();
+        
+        CredentialsStore credentialStore = lookupStores(Jenkins.getActiveInstance()).iterator().next();
+
+        annotatedSecretName = getSecretCustomName(secret);
+
+        if (annotatedSecretName != null) {
+            annotatedCredentials = lookupCredentials(annotatedSecretName);
+            if (annotatedCredentials != null) {
+                credentialMap.put(annotatedSecretName, annotatedCredentials); 
+            }
+        }
+
+        defaultCredentials = lookupCredentials(defaultSecretName);
+        if (defaultCredentials != null ) {
+            credentialMap.put(defaultSecretName, defaultCredentials);
+        }
+
+        if (annotatedSecretName != null) {
+            addOrUpdateCredentialName = annotatedSecretName;
+            if (annotatedSecretName != defaultSecretName) {}
+            removeCredentialName = defaultSecretName;
+        } else {
+            addOrUpdateCredentialName = defaultSecretName;
+        }
+
+        secretNamespaceName = NamespaceName.create(secret);
+        
+        Credentials existingCredentials = credentialMap.get(addOrUpdateCredentialName);
+
+        if (existingCredentials == null) {
+            try {
+                if (credentialStore.addCredentials(Domain.global(), credsFromSecret)) {
+                    logger.info("Added credential " + addOrUpdateCredentialName + " from Secret " + secretNamespaceName
+                                + " with revision: " + metadata.getResourceVersion());
+                    updateUidMap = true;
+                } else {
+                    logger.warning("Adding failed for secret with new Id " + addOrUpdateCredentialName + " from Secret "
+                                + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
                     }
-                    creentialsStore.save();
-                } finally {
-                    SecurityContextHolder.setContext(previousContext);
                 }
-                if (id != null && !id.isEmpty()) {
-                    return id;
+                catch (Exception ex) {
+                    logger.warning(ex.getMessage());
+                }
+        } else {
+            try {
+                credentialStore.updateCredentials(Domain.global(), existingCredentials, credsFromSecret);
+                logger.info("Updated credential " + addOrUpdateCredentialName + " from Secret " + secretNamespaceName
+                            + " with revision: " + metadata.getResourceVersion());
+                updateUidMap = true;
+            } catch (Exception ex) {
+                logger.warning(ex.getMessage());
+            }
+        }
+
+        if (removeCredentialName != null) {
+            Credentials removeMe = credentialMap.get(removeCredentialName);
+            if (removeMe != null) {
+                try { 
+                    credentialStore.removeCredentials(Domain.global(), removeMe);
+                    logger.info("Deleted credential " + removeCredentialName);
+                } catch (Exception ex) {
+                    logger.warning(ex.getMessage());
                 }
             }
         }
-        return null;
+
+        if (updateUidMap) {
+            UID_TO_SECRET_MAP.put(secretUid, addOrUpdateCredentialName);
+        }
+
+        credentialStore.save();
+
+        SecurityContextHolder.setContext(previousContext);
+
+        return addOrUpdateCredentialName;
     }
 
     private static void deleteCredential(String id, NamespaceName name, String resourceRevision) throws IOException {
