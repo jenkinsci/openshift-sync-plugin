@@ -226,8 +226,9 @@ public class CredentialsUtils {
 
         if (annotatedSecretName != null) {
             addOrUpdateCredentialName = annotatedSecretName;
-            if (annotatedSecretName != defaultSecretName) {}
-            removeCredentialName = defaultSecretName;
+            if (annotatedSecretName != defaultSecretName) {
+                removeCredentialName = defaultSecretName;
+            }
         } else {
             addOrUpdateCredentialName = defaultSecretName;
         }
