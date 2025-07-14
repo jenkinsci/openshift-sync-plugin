@@ -22,7 +22,9 @@
     <properties>
         <revision>1.1.0</revision>
         <changelist>999999-SNAPSHOT</changelist>
-        <jenkins.version>2.504.2</jenkins.version>
+        <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
+        <jenkins.baseline>2.504</jenkins.baseline>
+        <jenkins.version>${jenkins.baseline}.2</jenkins.version>
         <log.level>INFO</log.level>
     </properties>
 
@@ -117,7 +119,7 @@
             <!-- https://mvnrepository.com/artifact/io.jenkins.tools.bom/bom-2.504.x -->
             <dependency>
                 <groupId>io.jenkins.tools.bom</groupId>
-                <artifactId>bom-2.504.x</artifactId>
+                <artifactId>bom-${jenkins.baseline}.x</artifactId>
                 <version>4969.v6ffa_18d90c9f</version>
                 <scope>import</scope>
                 <type>pom</type>
