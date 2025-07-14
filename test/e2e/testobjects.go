@@ -37,30 +37,70 @@ const (
           }          
 `
 	simplemaven2 = `
-          try {
-             timeout(time: 20, unit: 'MINUTES') {
-        
-                node("POD_TEMPLATE_NAME") {
-                  container("java") {
+    podTemplate(
+    name: "POD_TEMPLATE_NAME",
+    agentInjection: true,
+    label: "POD_TEMPLATE_NAME",
+    serviceAccount: "jenkins",
+    containers: [
+        containerTemplate(
+            name: "jnlp",
+            image: "image-registry.openshift-image-registry.svc:5000/openshift/jenkins-agent-base:latest",
+            privileged: false,
+            alwaysPullImage: true,
+            workingDir:"/home/jenkins/agent",
+            args: '${JENKINS_SECRET} ${JENKINS_NAME}',
+            ttyEnabled: false),
+        containerTemplate(
+            name: "java",
+            image: "image-registry.openshift-image-registry.svc:5000/openshift/java:latest",
+            privileged: false,
+            alwaysPullImage: true,
+            workingDir:"/home/jenkins/agent",
+            command: 'sleep 300',
+            ttyEnabled: false)
+    ]) {
+    try {
+        timeout(time: 20, unit: 'MINUTES') {
+            node("POD_TEMPLATE_NAME") {
+                container("java") {
                     sh "mvn --version"
-                  }
                 }
-
-             }
-          } catch (err) {
-             echo "in catch block"
-             echo "Caught: ${err}"
-             currentBuild.result = 'FAILURE'
-             throw err
-          }
+            }
+        }
+    } catch (err) {
+        echo "in catch block"
+        echo "Caught: ${err}"
+        currentBuild.result = 'FAILURE'
+        throw err
+    }
+}
 `
 
+	// simplemaven1 is no longer used in the test, as simpleoc replaces it. It should be removed in the cleanup PR.
 	simplemaven1 = `
          try {
             timeout(time: 20, unit: 'MINUTES') {
 
                node("POD_TEMPLATE_NAME") {
                   sh "mvn --version"
+               }
+
+            }
+         } catch (err) {
+            echo "in catch block"
+            echo "Caught: ${err}"
+            currentBuild.result = 'FAILURE'
+            throw err
+         }
+`
+
+	simpleoc = `
+         try {
+            timeout(time: 20, unit: 'MINUTES') {
+
+               node("POD_TEMPLATE_NAME") {
+                  sh "oc version"
                }
 
             }
@@ -371,6 +411,8 @@ objects:
     strategy:
       sourceStrategy:
         env:
+        - name: NODE_ENV
+          value: development
         - name: NPM_MIRROR
           value: ${NPM_MIRROR}
         from:
@@ -431,7 +473,7 @@ objects:
           image: ' '
           livenessProbe:
             httpGet:
-              path: /pagecount
+              path: /live
               port: 8080
             initialDelaySeconds: 30
             timeoutSeconds: 3
@@ -440,7 +482,7 @@ objects:
           - containerPort: 8080
           readinessProbe:
             httpGet:
-              path: /pagecount
+              path: /ready
               port: 8080
             initialDelaySeconds: 3
             timeoutSeconds: 3
@@ -510,7 +552,7 @@ objects:
           image: ' '
           livenessProbe:
             httpGet:
-              path: /pagecount
+              path: /live
               port: 8080
             initialDelaySeconds: 30
             timeoutSeconds: 3
@@ -519,7 +561,7 @@ objects:
           - containerPort: 8080
           readinessProbe:
             httpGet:
-              path: /pagecount
+              path: /ready
               port: 8080
             initialDelaySeconds: 3
             timeoutSeconds: 3
@@ -612,7 +654,7 @@ objects:
         - postgresql
         from:
           kind: ImageStreamTag
-          name: postgresql:${POSTGRESQL_VERSION}
+          name: postgresql:latest
           namespace: ${NAMESPACE}
       type: ImageChange
     - type: ConfigChange
