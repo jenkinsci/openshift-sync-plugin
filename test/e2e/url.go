@@ -65,6 +65,7 @@ func (ut *Tester) CreateExecPod(name, cmd string) error {
 				},
 			},
 			HostNetwork:                   false,
+			RestartPolicy:                 v1.RestartPolicyNever,
 			TerminationGracePeriodSeconds: &immediate,
 		},
 	}
