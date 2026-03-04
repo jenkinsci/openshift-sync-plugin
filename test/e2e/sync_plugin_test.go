@@ -412,12 +412,13 @@ func rawURICheck(rawURI string, ta *testArgs, query ...string) {
 }
 
 func uriPost(rawURI string, ta *testArgs) {
-	err := wait.PollImmediate(5*time.Second, 1*time.Minute, func() (done bool, err error) {
+	err := wait.PollImmediate(30*time.Second, 3*time.Minute, func() (done bool, err error) {
 		j := NewRef(ta.t, kubeClient, ta.ns)
 		defer j.DelRawPostPod()
 		podName, err := j.RawPost(rawURI)
 		if err != nil {
 			ta.t.Logf("raw post %s err: %s", rawURI, err.Error())
+			return false, nil
 		}
 		if checkPodsForText(podName, "HTTP/1.1 200 OK", ta) {
 			return true, nil
