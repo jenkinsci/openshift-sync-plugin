@@ -21,7 +21,11 @@ import org.csanchez.jenkins.plugins.kubernetes.PodVolumes;
 
 import com.thoughtworks.xstream.XStreamException;
 
+import hudson.security.ACL;
 import hudson.util.XStream2;
+
+import org.acegisecurity.context.SecurityContext;
+import org.acegisecurity.context.SecurityContextHolder;
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Pod;
@@ -84,36 +88,41 @@ public class PodTemplateUtils {
     public static void removePodTemplate(PodTemplate podTemplate) {
         KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
         if (kubeCloud != null) {
-            String name = podTemplate.getName();
-            String namespace = podTemplate.getNamespace();
-            LOGGER.info("Removing PodTemplate: " + name + " in namespace:  " + namespace);
-            // NOTE - PodTemplate does not currently override hashCode, equals,
-            // so the KubernetsCloud.removeTemplate currently is broken;
-            // kubeCloud.removeTemplate(podTemplate);
-            List<PodTemplate> list = kubeCloud.getTemplates();
-            Iterator<PodTemplate> iter = list.iterator();
-            while (iter.hasNext()) {
-                PodTemplate pt = iter.next();
-                if (pt.getName().equals(name)) {
-                    iter.remove();
-                }
-            }
-            // now set new list back into cloud
-            kubeCloud.setTemplates(list);
+            final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
             try {
-                // pedantic mvn:findbugs
-                Jenkins jenkins = Jenkins.getInstance();
-                if (jenkins != null)
-                    jenkins.save();
-            } catch (IOException e) {
-                LOGGER.log(Level.SEVERE, "removePodTemplate", e);
-            }
-
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.fine("PodTemplates now:");
-                for (PodTemplate pt : kubeCloud.getTemplates()) {
-                    LOGGER.fine(pt.getName());
+                String name = podTemplate.getName();
+                String namespace = podTemplate.getNamespace();
+                LOGGER.info("Removing PodTemplate: " + name + " in namespace:  " + namespace);
+                // NOTE - PodTemplate does not currently override hashCode, equals,
+                // so the KubernetsCloud.removeTemplate currently is broken;
+                // kubeCloud.removeTemplate(podTemplate);
+                List<PodTemplate> list = kubeCloud.getTemplates();
+                Iterator<PodTemplate> iter = list.iterator();
+                while (iter.hasNext()) {
+                    PodTemplate pt = iter.next();
+                    if (pt.getName().equals(name)) {
+                        iter.remove();
+                    }
                 }
+                // now set new list back into cloud
+                kubeCloud.setTemplates(list);
+                try {
+                    // pedantic mvn:findbugs
+                    Jenkins jenkins = Jenkins.getInstance();
+                    if (jenkins != null)
+                        jenkins.save();
+                } catch (IOException e) {
+                    LOGGER.log(Level.SEVERE, "removePodTemplate", e);
+                }
+
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    LOGGER.fine("PodTemplates now:");
+                    for (PodTemplate pt : kubeCloud.getTemplates()) {
+                        LOGGER.fine(pt.getName());
+                    }
+                }
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
             }
         }
     }
@@ -151,15 +160,20 @@ public class PodTemplateUtils {
         removePodTemplate(podTemplate);
         KubernetesCloud kubeCloud = JenkinsUtils.getKubernetesCloud();
         if (kubeCloud != null) {
-            LOGGER.info("Adding PodTemplate: " + podTemplate.getName());
-            kubeCloud.addTemplate(podTemplate);
+            final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
             try {
-                // pedantic mvn:findbugs
-                Jenkins jenkins = Jenkins.getInstance();
-                if (jenkins != null)
-                    jenkins.save();
-            } catch (IOException e) {
-                LOGGER.log(Level.SEVERE, "addPodTemplate", e);
+                LOGGER.info("Adding PodTemplate: " + podTemplate.getName());
+                kubeCloud.addTemplate(podTemplate);
+                try {
+                    // pedantic mvn:findbugs
+                    Jenkins jenkins = Jenkins.getInstance();
+                    if (jenkins != null)
+                        jenkins.save();
+                } catch (IOException e) {
+                    LOGGER.log(Level.SEVERE, "addPodTemplate", e);
+                }
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
             }
         }
     }

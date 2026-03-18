@@ -729,32 +729,28 @@ func TestSecretCredentialSyncAfterStartup(t *testing.T) {
 func TestConfigMapPodTemplate(t *testing.T) {
 	ta := setupThroughJenkinsLaunch(t, nil)
 	defer projectClient.ProjectV1().Projects().Delete(context.Background(), ta.ns, metav1.DeleteOptions{})
-	podTemplateName := "jenkins-agent"
-	// Instead of using a ConfigMap to define the Jenkins PodTemplate, we are leveraging a BuildConfig for now
-	// as a valid mechanism to provisioning PodTemplate.
-	/*labels := map[string]string{"role": "jenkins-agent"}
+	labels := map[string]string{"role": "jenkins-agent"}
 	cmName := "config-map-with-podtemplate"
+	podTemplateName := "jenkins-agent"
 	cm := newPodTemplateConfigMap(cmName, podTemplateName, labels)
 	cm, err := kubeClient.CoreV1().ConfigMaps(ta.ns).Create(context.Background(), cm, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating pod template cm: %s", err.Error())
-	}*/
+	}
 	podTemplateTest(podTemplateName, simplemaven2, ta)
 }
 
 func TestConfigMapLegacyPodTemplate(t *testing.T) {
 	ta := setupThroughJenkinsLaunch(t, nil)
 	defer projectClient.ProjectV1().Projects().Delete(context.Background(), ta.ns, metav1.DeleteOptions{})
-	podTemplateName := "jenkins-slave"
-	// Instead of using a ConfigMap to define the Jenkins PodTemplate, we are leveraging a BuildConfig for now
-	// as a valid mechanism to provisioning PodTemplate.
-	/* labels := map[string]string{"role": "jenkins-slave"}
+	labels := map[string]string{"role": "jenkins-slave"}
 	cmName := "config-map-with-legacy-podtemplate"
+	podTemplateName := "jenkins-slave"
 	cm := newPodTemplateConfigMap(cmName, podTemplateName, labels)
 	cm, err := kubeClient.CoreV1().ConfigMaps(ta.ns).Create(context.Background(), cm, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating pod template cm: %s", err.Error())
-	}*/
+	}
 	podTemplateTest(podTemplateName, simplemaven2, ta)
 }
 
@@ -815,7 +811,6 @@ func newPodTemplateConfigMap(configMapName string, podTemplateName string, templ
 }
 
 func TestImageStreamPodTemplate(t *testing.T) {
-	t.Skip("Skipping this test as leveraging a BuildConfig as a valid mechanism to provisioning PodTemplate for now")
 	ta := setupThroughJenkinsLaunch(t, nil)
 	defer projectClient.ProjectV1().Projects().Delete(context.Background(), ta.ns, metav1.DeleteOptions{})
 
@@ -849,7 +844,6 @@ func TestImageStreamPodTemplate(t *testing.T) {
 }
 
 func TestImageStreamTagPodTemplate(t *testing.T) {
-	t.Skip("Skipping this test as leveraging a BuildConfig as a valid mechanism to provisioning PodTemplate for now")
 	ta := setupThroughJenkinsLaunch(t, nil)
 	defer projectClient.ProjectV1().Projects().Delete(context.Background(), ta.ns, metav1.DeleteOptions{})
 
