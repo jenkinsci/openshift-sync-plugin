@@ -19,25 +19,24 @@ import io.fabric8.arquillian.kubernetes.Session;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.assertj.core.api.Condition;
-import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.arquillian.test.api.ArquillianResource;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static io.fabric8.kubernetes.assertions.Assertions.assertThat;
 
-@RunWith(Arquillian.class)
-public class JenkinsOpenShiftSysTest {
+@ExtendWith(ArquillianExtension.class)
+class JenkinsOpenShiftSysTest {
 
   @ArquillianResource
-  KubernetesClient client;
+  private KubernetesClient client;
 
   @ArquillianResource
-  Session session;
+  private Session session;
 
   @Test
-  public void testAppProvisionsRunningPods() throws Exception {
-
+  void testAppProvisionsRunningPods() {
     installInitialBuildConfigs();
 
     assertThat(client).pods()

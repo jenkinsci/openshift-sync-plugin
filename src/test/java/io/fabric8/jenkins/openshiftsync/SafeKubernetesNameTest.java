@@ -16,15 +16,17 @@
  */
 package io.fabric8.jenkins.openshiftsync;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
+ *
  */
-public class SafeKubernetesNameTest {
+class SafeKubernetesNameTest {
+
     @Test
-    public void testSafeNames() throws Exception {
+    void testSafeNames() {
         assertSafeKubernetesName("Foo-Bar", "foo-bar");
         assertSafeKubernetesName("-Foo-Bar", "foo-bar");
         assertSafeKubernetesName(".-Foo-Bar", "foo-bar");
@@ -35,10 +37,10 @@ public class SafeKubernetesNameTest {
         assertSafeKubernetesName("_*foo-bar/*wh!atnot)", "foo-bar.wh-atnot");
     }
 
-    public static void assertSafeKubernetesName(String text, String expected) {
+    private static void assertSafeKubernetesName(String text, String expected) {
         String actual = OpenShiftUtils.convertNameToValidResourceName(text);
         //System.out.println("Converted `" + text + "` => `" + actual + "`");
-        assertEquals("Safe name for `" + text + "`", expected, actual);
+        assertEquals(expected, actual, "Safe name for `" + text + "`");
     }
 
 }
