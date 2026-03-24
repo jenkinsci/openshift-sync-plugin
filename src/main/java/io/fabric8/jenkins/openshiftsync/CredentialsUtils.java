@@ -37,6 +37,7 @@ import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 
+import com.cloudbees.hudson.plugins.folder.Folder;
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
 import com.cloudbees.plugins.credentials.Credentials;
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
@@ -166,6 +167,56 @@ public class CredentialsUtils {
         return null;
     }
 
+    private static String getSecretCredentialStore(Secret secret) {
+        ObjectMeta metadata = secret.getMetadata();
+        if (metadata != null) {
+            Map<String, String> annotations = metadata.getAnnotations();
+            if (annotations != null) {
+                String store = annotations.get(Annotations.CREDENTIAL_STORE);
+                if (store != null) {
+                    store = store.trim();
+                    return store;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static CredentialsStore getCredentialsStoreForSecret(Secret secret) {
+        // Default = system store
+        Jenkins j = Jenkins.getActiveInstance();
+        String store = getSecretCredentialStore(secret);
+        if (isNotBlank(store)) {
+            // Interpret as fullName of a Folder (e.g. "team-a" or "org/team-a")
+            Folder folder = j.getItemByFullName(store, Folder.class);
+            if (folder != null) {
+                java.util.Iterator<CredentialsStore> it = CredentialsProvider.lookupStores(folder).iterator();
+                while (it.hasNext()) {
+                    CredentialsStore s = it.next();
+                    if (s != null) {
+                        try {
+                            if (s.getDomains().contains(Domain.global())) {
+                                return s;
+                            }
+                        } catch (Throwable t) {
+                            // ignore and fall back below
+                        }
+                    }
+                }
+                // Fallback to first store
+                it = CredentialsProvider.lookupStores(folder).iterator();
+                if (it.hasNext()) {
+                    return it.next();
+                }
+                logger.warning("No credentials store found for folder '" + store + "', falling back to System store");
+            } else {
+                logger.warning("Folder '" + store + "' from annotation " + Annotations.CREDENTIAL_STORE
+                        + " not found, falling back to System store");
+            }
+        }
+        return lookupStores(j).iterator().next();
+    }
+
     /**
      * Inserts or creates a Jenkins Credential for the given Secret
      * 
@@ -196,14 +247,14 @@ public class CredentialsUtils {
                 Credentials existingCreds = lookupCredentials(id);
                 final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
                 try {
-                    CredentialsStore creentialsStore = lookupStores(Jenkins.getActiveInstance()).iterator().next();
+                    CredentialsStore credentialsStore = getCredentialsStoreForSecret(secret);
                     String originalId = generateCredentialsName(namespace, secretName, null);
                     Credentials existingOriginalCreds = lookupCredentials(originalId);
                     NamespaceName secretNamespaceName = null;
 
                     String secretUid = metadata.getUid();
                     if (!originalId.equals(id)) {
-                        boolean hasAddedCredential = creentialsStore.addCredentials(Domain.global(), creds);
+                        boolean hasAddedCredential = credentialsStore.addCredentials(Domain.global(), creds);
                         if (!hasAddedCredential) {
                             logger.warning("Setting secret  failed for secret with new Id " + id + " from Secret "
                                     + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
@@ -212,9 +263,9 @@ public class CredentialsUtils {
                             String oldId = UID_TO_SECRET_MAP.get(secretUid);
                             if (oldId != null) {
                                 Credentials oldCredentials = lookupCredentials(oldId);
-                                creentialsStore.removeCredentials(Domain.global(), oldCredentials);
+                                credentialsStore.removeCredentials(Domain.global(), oldCredentials);
                             } else if (existingOriginalCreds != null) {
-                                creentialsStore.removeCredentials(Domain.global(), existingOriginalCreds);
+                                credentialsStore.removeCredentials(Domain.global(), existingOriginalCreds);
                             }
                             UID_TO_SECRET_MAP.put(secretUid, id);
                             secretNamespaceName = NamespaceName.create(secret);
@@ -223,13 +274,13 @@ public class CredentialsUtils {
                         }
                     } else {
                         if (existingCreds != null) {
-                            creentialsStore.updateCredentials(Domain.global(), existingCreds, creds);
+                            credentialsStore.updateCredentials(Domain.global(), existingCreds, creds);
                             UID_TO_SECRET_MAP.put(secretUid, id);
                             secretNamespaceName = NamespaceName.create(secret);
                             logger.info("Updated credential " + id + " from Secret " + secretNamespaceName
                                     + " with revision: " + metadata.getResourceVersion());
                         } else {
-                            boolean hasAddedCredential = creentialsStore.addCredentials(Domain.global(), creds);
+                            boolean hasAddedCredential = credentialsStore.addCredentials(Domain.global(), creds);
                             if (!hasAddedCredential) {
                                 logger.warning("Update failed for secret with new Id " + id + " from Secret "
                                         + secretNamespaceName + " with revision: " + metadata.getResourceVersion());
@@ -241,7 +292,7 @@ public class CredentialsUtils {
                             }
                         }
                     }
-                    creentialsStore.save();
+                    credentialsStore.save();
                 } finally {
                     SecurityContextHolder.setContext(previousContext);
                 }
@@ -291,10 +342,41 @@ public class CredentialsUtils {
             String id = generateCredentialsName(secret.getMetadata().getNamespace(), secret.getMetadata().getName(),
                     getSecretCustomName(secret));
             try {
-                deleteCredential(id, NamespaceName.create(secret), secret.getMetadata().getResourceVersion());
+                CredentialsStore store = getCredentialsStoreForSecret(secret);
+                deleteCredential(id, NamespaceName.create(secret), secret.getMetadata().getResourceVersion(), store);
             } catch (IOException e) {
                 logger.log(SEVERE, "Credentials has not been deleted: " + e, e);
                 throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private static void deleteCredential(String id, NamespaceName name, String resourceRevision, CredentialsStore store)
+            throws IOException {
+        Credentials existingCred = lookupCredentials(id);
+        if (existingCred != null) {
+            final SecurityContext previousContext = ACL.impersonate(ACL.SYSTEM);
+            try {
+                Fingerprint fp = CredentialsProvider.getFingerprintOf(existingCred);
+                if (fp != null && fp.getJobs().size() > 0) {
+                    StringBuffer sb = new StringBuffer();
+                    for (String job : fp.getJobs())
+                        sb.append(job).append(" ");
+                    logger.info("About to delete credential " + id + "which is referenced by jobs: " + sb.toString());
+                }
+                CredentialsStore s = store != null ? store
+                        : CredentialsProvider.lookupStores(Jenkins.getActiveInstance()).iterator().next();
+                if (!existingCred.getDescriptor().getDisplayName().contains(KUBERNETES_SERVICE_ACCOUNT)) {
+                    s.removeCredentials(Domain.global(), existingCred);
+                    logger.info("Deleted credential " + id + " from Secret " + name + " with revision: "
+                            + resourceRevision);
+                    s.save();
+                } else {
+                    logger.warning(
+                            "Stopped attempt to delete " + KUBERNETES_SERVICE_ACCOUNT + " credentials with Id " + id);
+                }
+            } finally {
+                SecurityContextHolder.setContext(previousContext);
             }
         }
     }
