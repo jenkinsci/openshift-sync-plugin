@@ -98,7 +98,8 @@ public class BuildConfigToJobMapper {
                 }
                 String credentialsId = updateSourceCredentials(bc);
                 // if credentialsID is null, go with an SCM where anonymous has to be sufficient
-                UserRemoteConfig remoteConfig = new UserRemoteConfig(gitSource.getUri(), null, null, credentialsId);
+                String refspec = OpenShiftUtils.getAnnotation(bc, Annotations.REFSPEC);
+                UserRemoteConfig remoteConfig = new UserRemoteConfig(gitSource.getUri(), null, refspec, credentialsId);
                 List<UserRemoteConfig> userRemoteConfigs = Collections.singletonList(remoteConfig);
                 List<SubmoduleConfig> submoduleCfg = Collections.<SubmoduleConfig>emptyList();
                 List<GitSCMExtension> extensions = Collections.<GitSCMExtension>emptyList();
