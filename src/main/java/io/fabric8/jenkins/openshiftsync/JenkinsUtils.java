@@ -31,7 +31,7 @@ import static io.fabric8.jenkins.openshiftsync.OpenShiftUtils.updateOpenShiftBui
 import static java.util.Collections.sort;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
-import static org.apache.commons.lang.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,7 +51,7 @@ import java.util.logging.Logger;
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.tools.ant.filters.StringInputStream;
 import org.csanchez.jenkins.plugins.kubernetes.KubernetesCloud;
 import org.eclipse.jgit.transport.URIish;
