@@ -23,7 +23,7 @@ import io.fabric8.openshift.api.model.BuildSpec;
 import io.fabric8.openshift.api.model.GitBuildSource;
 import io.fabric8.openshift.api.model.SourceRevision;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 public class BuildCause extends Cause {
 

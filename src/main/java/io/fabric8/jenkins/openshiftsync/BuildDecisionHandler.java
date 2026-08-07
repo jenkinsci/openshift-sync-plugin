@@ -25,7 +25,7 @@ import hudson.model.Queue;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildRequestBuilder;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 
 import java.util.List;

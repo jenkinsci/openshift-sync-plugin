@@ -17,8 +17,8 @@ package io.fabric8.jenkins.openshiftsync;
 
 import static io.fabric8.jenkins.openshiftsync.CredentialsUtils.updateSourceCredentials;
 import static java.util.logging.Level.INFO;
-import static org.apache.commons.lang.StringUtils.isEmpty;
-import static org.apache.commons.lang.StringUtils.isNotBlank;
+import static org.apache.commons.lang3.StringUtils.isEmpty;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,7 +26,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.URIish;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;

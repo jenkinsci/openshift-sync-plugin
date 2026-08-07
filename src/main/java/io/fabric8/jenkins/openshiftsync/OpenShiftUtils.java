@@ -41,8 +41,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import hudson.PluginWrapper;
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.builder.ReflectionToStringBuilder;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.tools.ant.filters.StringInputStream;
 import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormatter;
