@@ -187,7 +187,7 @@ final class StageChunkVisitor extends StandardChunkVisitor {
                 if (start.getAction(ThreadNameAction.class) != null) {
                     // a finished parallel branch while other branches are still running
                     if (lastNode.getError() != null) {
-                        return StatusExt.FAILED;
+                        return StatusExt.valueOf(lastNode.getError());
                     }
                     WarningAction warning = worstWarningBetween(start, lastNode);
                     return warning != null ? StatusExt.valueOf(warning.getResult()) : StatusExt.SUCCESS;
