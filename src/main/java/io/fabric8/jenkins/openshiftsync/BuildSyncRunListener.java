@@ -56,19 +56,8 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.cloudbees.workflow.rest.external.AtomFlowNodeExt;
-import com.cloudbees.workflow.rest.external.FlowNodeExt;
-import com.cloudbees.workflow.rest.external.PendingInputActionsExt;
-import com.cloudbees.workflow.rest.external.RunExt;
-import com.cloudbees.workflow.rest.external.StageNodeExt;
-import com.cloudbees.workflow.rest.external.StatusExt;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.annotation.JsonFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
-import com.fasterxml.jackson.databind.ser.FilterProvider;
-import com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter;
-import com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider;
 
 import hudson.Extension;
 import hudson.PluginManager;
@@ -77,6 +66,11 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.model.listeners.RunListener;
 import hudson.triggers.SafeTimerTask;
+import io.fabric8.jenkins.openshiftsync.runstatus.FlowNodeExt;
+import io.fabric8.jenkins.openshiftsync.runstatus.PendingInputActionsExt;
+import io.fabric8.jenkins.openshiftsync.runstatus.RunExt;
+import io.fabric8.jenkins.openshiftsync.runstatus.StageNodeExt;
+import io.fabric8.jenkins.openshiftsync.runstatus.StatusExt;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildBuilder;
@@ -371,16 +365,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
             if (links.getLog() != null && !links.getLog().href.matches("^https?://.*$")) {
                 links.getLog().setHref(joinPaths(rootUrl, links.getLog().href));
             }
-            newNumFlowNodes = newNumFlowNodes + stage.getStageFlowNodes().size();
-            for (AtomFlowNodeExt node : stage.getStageFlowNodes()) {
-                FlowNodeExt.FlowNodeLinks nodeLinks = node.get_links();
-                if (!nodeLinks.self.href.matches("^https?://.*$")) {
-                    nodeLinks.self.setHref(joinPaths(rootUrl, nodeLinks.self.href));
-                }
-                if (nodeLinks.getLog() != null && !nodeLinks.getLog().href.matches("^https?://.*$")) {
-                    nodeLinks.getLog().setHref(joinPaths(rootUrl, nodeLinks.getLog().href));
-                }
-            }
+            newNumFlowNodes = newNumFlowNodes + stage.getStageFlowNodeCount();
 
             StatusExt status = stage.getStatus();
             if (status != null && status.equals(StatusExt.PAUSED_PENDING_INPUT)) {
@@ -464,15 +449,7 @@ public class BuildSyncRunListener extends RunListener<Run> {
     }
 
     protected static String asJSON(Object obj) throws JsonProcessingException {
-        String json;
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.addMixInAnnotations(StageNodeExt.class, StageFlowNodesFilterMixIn.class);
-        FilterProvider filters = new SimpleFilterProvider().addFilter(
-                "stageFlowNodesFilter",
-                SimpleBeanPropertyFilter.serializeAllExcept("stageFlowNodes"));
-        ObjectWriter writer = mapper.writer(filters);
-        json = writer.writeValueAsString(obj);
-        return json;
+        return new ObjectMapper().writeValueAsString(obj);
     }
 
     // annotate the Build with pending input JSON so consoles can do the
@@ -545,6 +522,3 @@ public class BuildSyncRunListener extends RunListener<Run> {
                 && GlobalPluginConfiguration.get().isEnabled();
     }
 }
-
-@JsonFilter("stageFlowNodesFilter")
-class StageFlowNodesFilterMixIn {}
