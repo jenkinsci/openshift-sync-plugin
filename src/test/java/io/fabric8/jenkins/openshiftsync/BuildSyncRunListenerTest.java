@@ -1,8 +1,7 @@
 package io.fabric8.jenkins.openshiftsync;
 
-import com.cloudbees.workflow.rest.external.AtomFlowNodeExt;
-import com.cloudbees.workflow.rest.external.RunExt;
-import com.cloudbees.workflow.rest.external.StageNodeExt;
+import io.fabric8.jenkins.openshiftsync.runstatus.RunExt;
+import io.fabric8.jenkins.openshiftsync.runstatus.StageNodeExt;
 import org.junit.Test;
 
 import static io.fabric8.jenkins.openshiftsync.BuildSyncRunListener.asJSON;
@@ -14,10 +13,11 @@ public class BuildSyncRunListenerTest {
   @Test
   public void testRunExtToJSON() throws Exception {
     StageNodeExt sn = new StageNodeExt();
-    sn.setStageFlowNodes(singletonList(new AtomFlowNodeExt()));
+    sn.setStageFlowNodeCount(1);
     RunExt re = new RunExt();
     re.setStages(singletonList(sn));
     String json = asJSON(re);
     assertFalse("json should not contain 'stageFlowNodes'", json.contains("stageFlowNodes"));
+    assertFalse("json should not contain 'stageFlowNodeCount'", json.contains("stageFlowNodeCount"));
   }
 }

@@ -91,8 +91,12 @@
             <artifactId>workflow-support</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.jenkins-ci.plugins.pipeline-stage-view</groupId>
-            <artifactId>pipeline-rest-api</artifactId>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>pipeline-input-step</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>jackson2-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
@@ -109,6 +113,16 @@
         <dependency>
             <groupId>org.csanchez.jenkins.plugins</groupId>
             <artifactId>kubernetes</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>pipeline-stage-step</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jenkins-ci.plugins.workflow</groupId>
+            <artifactId>workflow-basic-steps</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -136,11 +150,6 @@
                 <groupId>org.jenkins-ci.plugins.workflow</groupId>
                 <artifactId>workflow-support</artifactId>
                 <version>968.v8f17397e87b_8</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jenkins-ci.plugins.pipeline-stage-view</groupId>
-                <artifactId>pipeline-rest-api</artifactId>
-                <version>2.38</version>
             </dependency>
             <dependency>
                 <groupId>org.jenkins-ci.plugins</groupId>
